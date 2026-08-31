@@ -14,11 +14,15 @@ const ROOT = __dirname;
 const NOTES = path.join(ROOT, 'notes');
 
 const html = fs.readFileSync(path.join(ROOT, 'app.html'), 'utf8');
-const script = html.match(/<script>([\s\S]*)<\/script>/);
-if (!script) throw new Error('в app.html не найден блок <script>');
+// Скриптов в файле несколько (библиотеки и приложение) — нужен последний,
+// в нём лежат данные. Жадный поиск склеил бы их в один невалидный кусок.
+const scripts = html.match(/<script>[\s\S]*?<\/script>/g);
+if (!scripts || !scripts.length) throw new Error('в app.html не найден блок <script>');
 
 // Берём только секцию с данными — до начала состояния приложения
-const body = script[1];
+const body = scripts[scripts.length - 1]
+  .replace(/^<script>/, '')
+  .replace(/<\/script>$/, '');
 const cut = body.indexOf('/* ══ STATE');
 if (cut < 0) throw new Error('в app.html не найден маркер секции STATE');
 
