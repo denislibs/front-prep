@@ -1,0 +1,22 @@
+{
+  "name": "fronted-prep",
+  "version": "1.0.0",
+  "description": "Тренажёр и конспекты для подготовки к собеседованию на позицию senior frontend разработчика (React / Next.js).",
+  "main": "build.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "jsdom": "^29.1.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "sucrase": "^3.35.0"
+  }
+}
