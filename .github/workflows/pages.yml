@@ -1,0 +1,65 @@
+name: Сборка и публикация
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Одновременно должен идти только один деплой; начатый не прерываем
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Установить зависимости
+        run: npm ci
+
+      - name: Собрать тренажёр
+        run: node build.js
+
+      - name: Проверить автотесты задач
+        run: node verify-tests.js
+
+      - name: Сгенерировать конспекты
+        run: node export-notes.js
+
+      - name: Собрать сайт конспектов
+        run: npx vitepress build notes-src
+
+      - name: Сложить всё вместе
+        # Тренажёр лежит в корне, конспекты — в /notes/ (туда пишет vitepress)
+        run: |
+          cp index.html dist/index.html
+          test -s dist/index.html
+          test -s dist/notes/index.html
+          echo "страниц конспектов: $(find dist/notes -name '*.html' | wc -l)"
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

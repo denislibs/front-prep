@@ -11,3 +11,9 @@ node_modules/
 # В репозитории публикуется index.html — его отдаёт GitHub Pages.
 # Восстанавливается командой: node build.js
 app.html
+
+# Генерируется export-notes.js из research/ и шаблона
+notes-src/
+
+# Сборка сайта: делается в CI, в репозитории не нужна
+dist/

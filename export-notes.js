@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 /**
- * Достаёт колоды и задачи из собранного app.html и раскладывает их
- * в читаемые markdown-конспекты в notes/ — чтобы материал был
- * доступен и без тренажёра (поиск по репозиторию, печать, чтение оффлайн).
+ * Генерирует исходники сайта конспектов в notes-src/ — по странице на вопрос.
+ *
+ * Раньше здесь получался один файл на колоду, и System Design весил
+ * 663 КБ одной страницей: читать невозможно, ссылаться некуда. Теперь
+ * у каждого вопроса свой адрес вида /notes/js/js2, страницы лёгкие,
+ * а поиск VitePress ведёт точно в нужное место.
  *
  * Запуск: node export-notes.js   (после node build.js)
  */
@@ -11,15 +14,15 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = __dirname;
-const NOTES = path.join(ROOT, 'notes');
+// Исходники сайта конспектов. Папка docs/ занята рукописными
+// спецификациями проекта, поэтому генерируем рядом.
+const DOCS = path.join(ROOT, 'notes-src');
 
 const html = fs.readFileSync(path.join(ROOT, 'app.html'), 'utf8');
-// Скриптов в файле несколько (библиотеки и приложение) — нужен последний,
-// в нём лежат данные. Жадный поиск склеил бы их в один невалидный кусок.
+// Скриптов в файле несколько (библиотеки и приложение) — нужен последний
 const scripts = html.match(/<script>[\s\S]*?<\/script>/g);
 if (!scripts || !scripts.length) throw new Error('в app.html не найден блок <script>');
 
-// Берём только секцию с данными — до начала состояния приложения
 const body = scripts[scripts.length - 1]
   .replace(/^<script>/, '')
   .replace(/<\/script>$/, '');
@@ -30,12 +33,25 @@ const { DECKS, TASKS, taskCat } = new Function(
   body.slice(0, cut) + '; return { DECKS, TASKS, taskCat };'
 )();
 
-/** Грубая, но достаточная конвертация нашего ограниченного HTML в markdown */
+/**
+ * Конвертация нашего ограниченного HTML в markdown.
+ *
+ * VitePress разбирает markdown как шаблон Vue, поэтому угловая скобка
+ * в обычном тексте («компонент <Suspense> приостанавливает…») трактуется
+ * как незакрытый тег и роняет сборку. В прозе скобки экранируются,
+ * а внутри кода остаются настоящими: там markdown их не трогает.
+ */
 function toMarkdown(html) {
-  return html
+  const spans = [];
+  const stash = (text) => {
+    spans.push(text.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'));
+    return '\u0000C' + (spans.length - 1) + '\u0000';
+  };
+
+  let out = html
+    .replace(/<code>([\s\S]*?)<\/code>/g, (_, inner) => stash(inner))
     .replace(/\s*\n\s*/g, ' ')
-    .replace(/<h4>(.*?)<\/h4>/g, '\n\n### $1\n')
-    // нумерованные списки конвертируем первыми, чтобы сохранить порядок пунктов
+    .replace(/<h4>(.*?)<\/h4>/g, '\n\n## $1\n')
     .replace(/<ol>([\s\S]*?)<\/ol>/g, (_, inner) => {
       let n = 0;
       return '\n' + inner.replace(/<li>([\s\S]*?)<\/li>/g, (__, item) => '\n' + (++n) + '. ' + item.trim()) + '\n';
@@ -47,61 +63,209 @@ function toMarkdown(html) {
     .replace(/<li>\s*/g, '\n- ')
     .replace(/<\/li>/g, '')
     .replace(/<strong>(.*?)<\/strong>/g, '**$1**')
-    .replace(/<code>(.*?)<\/code>/g, '`$1`')
     .replace(/<[^>]+>/g, '')
     .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
     .replace(/[ \t]+$/gm, '')
     .replace(/\n\s*\n/g, '\n\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+
+  return escapeProse(out)
+    .replace(/\u0000C(\d+)\u0000/g, (_, i) => fenceInline(spans[i]));
 }
 
-fs.mkdirSync(NOTES, { recursive: true });
-for (const file of fs.readdirSync(NOTES)) fs.unlinkSync(path.join(NOTES, file));
+/**
+ * Обрамляет код в бэктики так, чтобы не сломаться о бэктики внутри.
+ * Шаблонные литералы в примерах — обычное дело, и одинарная обёртка
+ * вокруг них даёт неверную вложенность.
+ */
+function fenceInline(code) {
+  const longest = (code.match(/`+/g) || []).reduce((max, run) => Math.max(max, run.length), 0);
+  const ticks = '`'.repeat(longest + 1);
+  const pad = /^`|`$/.test(code) ? ' ' : '';
+  return ticks + pad + code + pad + ticks;
+}
 
-const index = ['# Конспекты', '', 'Сгенерировано из тренажёра (`node export-notes.js`). Правки вносить в `research/` и `src/app.template.html`, а не здесь.', ''];
+/** Скобки и усы, которые Vue принял бы за разметку или подстановку */
+function escapeProse(text) {
+  return text
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\{\{/g, '&#123;&#123;');
+}
 
-DECKS.forEach((deck, i) => {
-  const lines = ['# ' + deck.title, '', deck.sub, '', '_Вопросов: ' + deck.cards.length + '_', ''];
-  deck.cards.forEach((card, n) => {
-    lines.push('## ' + (n + 1) + '. ' + card.q, '');
-    // Код из постановки идёт до ответа — как и в самом тренажёре
+/** Экранирование для frontmatter: заголовок идёт в кавычках */
+const quote = (text) => '"' + String(text).replace(/"/g, '\\"') + '"';
+
+const FREQ_NOTE = {
+  3: 'Спрашивают почти всегда',
+  2: 'Спрашивают регулярно',
+  1: 'Редкий вопрос — оставь на потом',
+};
+
+fs.rmSync(DOCS, { recursive: true, force: true });
+fs.mkdirSync(DOCS, { recursive: true });
+
+// Меню строится отдельно для каждого раздела: общий список из 440 пунктов
+// VitePress вшивал бы в КАЖДУЮ страницу, и сайт распухал до сотен мегабайт
+const sidebar = {};
+const shortText = (text) => (text.length > 58 ? text.slice(0, 57).trimEnd() + '…' : text);
+let pages = 0;
+
+for (const deck of DECKS) {
+  const dir = path.join(DOCS, deck.id);
+  fs.mkdirSync(dir, { recursive: true });
+
+  const items = [];
+
+  for (const card of deck.cards) {
+    const lines = [
+      '---',
+      'title: ' + quote(card.q),
+      '---',
+      '',
+      '# ' + escapeProse(card.q),
+      '',
+    ];
+
+    if (card.freq) lines.push('> ' + FREQ_NOTE[card.freq], '');
     if (card.snippet) lines.push('```js', card.snippet.trim(), '```', '');
-    lines.push(toMarkdown(card.a), '');
-    if (card.code && card.code !== card.snippet) lines.push('```js', card.code.trim(), '```', '');
-    if (card.tip) lines.push('> **Что добавит очков.** ' + card.tip, '');
-  });
-  const name = String(i + 1).padStart(2, '0') + '-' + deck.id + '.md';
-  fs.writeFileSync(path.join(NOTES, name), lines.join('\n'), 'utf8');
-  index.push('- [' + deck.title + '](' + name + ') — ' + deck.cards.length + ' вопросов');
-});
 
-// Задачи на лайвкодинг — отдельным файлом, сгруппированные по категориям
+    lines.push(toMarkdown(card.a), '');
+
+    if (card.code && card.code !== card.snippet) {
+      lines.push('```js', card.code.trim(), '```', '');
+    }
+    if (card.tip) lines.push('::: tip Что добавит очков', escapeProse(card.tip), ':::', '');
+
+    lines.push('---', '',
+      '[Открыть в тренажёре](../../#/cards/' + deck.id + '/' + card.id + ') · ' +
+      '[Все вопросы раздела](./)');
+
+    fs.writeFileSync(path.join(dir, card.id + '.md'), lines.join('\n'), 'utf8');
+    items.push({ text: shortText(card.q), link: '/' + deck.id + '/' + card.id });
+    pages++;
+  }
+
+  // Оглавление раздела
+  const indexLines = [
+    '---', 'title: ' + quote(deck.title), '---', '',
+    '# ' + escapeProse(deck.title), '', escapeProse(deck.sub), '',
+    '_Вопросов: ' + deck.cards.length + '. Отсортированы по частоте: сверху то, что спрашивают почти всегда._', '',
+  ];
+  let lastFreq = null;
+  for (const card of deck.cards) {
+    if (card.freq !== lastFreq) {
+      lastFreq = card.freq;
+      indexLines.push('', '## ' + (FREQ_NOTE[card.freq] || 'Прочее'), '');
+    }
+    indexLines.push('- [' + escapeProse(card.q) + '](./' + card.id + ')');
+  }
+  fs.writeFileSync(path.join(dir, 'index.md'), indexLines.join('\n'), 'utf8');
+
+  sidebar['/' + deck.id + '/'] = [{ text: deck.title, items }];
+}
+
+/* ── Лайвкодинг: страница на задачу ── */
+const codeDir = path.join(DOCS, 'code');
+fs.mkdirSync(codeDir, { recursive: true });
+const codeItems = [];
+
+for (const task of TASKS) {
+  const lines = [
+    '---', 'title: ' + quote(task.title), '---', '',
+    '# ' + escapeProse(task.title), '',
+    '> ' + (task.must ? 'Спрашивают часто' : 'Спрашивают реже') + ' · ' + taskCat(task), '',
+    toMarkdown(task.prompt), '',
+    '## Подсказки', '',
+  ];
+  for (const hint of task.hints) lines.push('- ' + escapeProse(hint));
+  lines.push('', '## Решение', '', '```js', task.code.trim(), '```', '',
+    toMarkdown(task.notes), '', '---', '',
+    '[Решить в песочнице](../../#/code/' + task.id + ') · [Все задачи](./)');
+
+  fs.writeFileSync(path.join(codeDir, task.id + '.md'), lines.join('\n'), 'utf8');
+  codeItems.push({ text: shortText(task.title), link: '/code/' + task.id });
+}
+
+const codeIndex = ['---', 'title: "Лайвкодинг"', '---', '', '# Лайвкодинг', '',
+  '_Задач: ' + TASKS.length + '. Сначала решай сам, только потом смотри решение._', ''];
 const byCat = new Map();
 for (const task of TASKS) {
   const cat = taskCat(task);
   if (!byCat.has(cat)) byCat.set(cat, []);
   byCat.get(cat).push(task);
 }
-
-const taskLines = ['# Лайвкодинг', '', '_Задач: ' + TASKS.length + '_', '',
-  'Сначала решай сам и проговаривай вслух, только потом смотри решение.', ''];
-for (const [cat, items] of byCat) {
-  taskLines.push('## ' + cat, '');
-  for (const task of items) {
-    taskLines.push('### ' + task.title + (task.must ? ' — спрашивают часто' : ''), '');
-    taskLines.push(toMarkdown(task.prompt), '');
-    taskLines.push('**Подсказки:**', '');
-    for (const hint of task.hints) taskLines.push('- ' + hint);
-    taskLines.push('', '<details><summary>Решение</summary>', '', '```js', task.code.trim(), '```', '');
-    taskLines.push(toMarkdown(task.notes), '', '</details>', '');
-  }
+for (const [cat, list] of byCat) {
+  codeIndex.push('', '## ' + cat, '');
+  for (const task of list) codeIndex.push('- [' + escapeProse(task.title) + '](./' + task.id + ')');
 }
-fs.writeFileSync(path.join(NOTES, '99-livecoding.md'), taskLines.join('\n'), 'utf8');
-index.push('- [Лайвкодинг](99-livecoding.md) — ' + TASKS.length + ' задач');
+fs.writeFileSync(path.join(codeDir, 'index.md'), codeIndex.join('\n'), 'utf8');
+sidebar['/code/'] = [{ text: 'Лайвкодинг', items: codeItems }];
 
-fs.writeFileSync(path.join(NOTES, 'README.md'), index.join('\n') + '\n', 'utf8');
-
+/* ── Главная ── */
 const totalCards = DECKS.reduce((sum, d) => sum + d.cards.length, 0);
-console.log('✓ notes/ обновлён: ' + DECKS.length + ' конспектов, ' +
-  totalCards + ' вопросов, ' + TASKS.length + ' задач');
+fs.writeFileSync(path.join(DOCS, 'index.md'), [
+  '---',
+  'layout: home',
+  'hero:',
+  '  name: Конспекты',
+  '  text: Подготовка к собеседованию senior frontend',
+  '  tagline: ' + totalCards + ' разобранных вопросов и ' + TASKS.length + ' задач. Поиск по всему материалу — сверху.',
+  '  actions:',
+  '    - theme: brand',
+  '      text: Открыть тренажёр',
+  '      link: ../',
+  '    - theme: alt',
+  '      text: Начать с JavaScript',
+  '      link: /js/',
+  'features:',
+  ...DECKS.map(d => [
+    '  - title: ' + quote(d.title),
+    '    details: ' + quote(d.sub + ' Вопросов: ' + d.cards.length + '.'),
+    '    link: /' + d.id + '/',
+  ].join('\n')),
+  '  - title: "Лайвкодинг"',
+  '    details: ' + quote('Задачи с подсказками и разбором решения. Всего: ' + TASKS.length + '.'),
+  '    link: /code/',
+  '---',
+  '',
+].join('\n'), 'utf8');
+
+/* ── Конфиг VitePress ── */
+const vpDir = path.join(DOCS, '.vitepress');
+fs.mkdirSync(vpDir, { recursive: true });
+fs.writeFileSync(path.join(vpDir, 'config.mjs'), `// Сгенерировано export-notes.js — правки вносить туда, а не сюда
+import { defineConfig } from 'vitepress';
+
+export default defineConfig({
+  title: 'Конспекты',
+  description: 'Подготовка к собеседованию senior frontend',
+  lang: 'ru-RU',
+  base: '/front-prep/notes/',
+  outDir: '../dist/notes',
+  cleanUrls: true,
+  // Ссылки вида ../../#/cards/js/js2 ведут в тренажёр, который живёт
+  // на уровень выше сайта конспектов. Во время работы они корректны,
+  // но проверяльщик ссылок VitePress не знает, что там лежит.
+  ignoreDeadLinks: [/\\.\\.\\/\\.\\.\\//],
+  lastUpdated: false,
+  themeConfig: {
+    nav: ${JSON.stringify([
+      { text: 'Тренажёр', link: '../' },
+      ...DECKS.map(d => ({ text: d.title, link: '/' + d.id + '/' })),
+      { text: 'Лайвкодинг', link: '/code/' },
+    ])},
+    sidebar: ${JSON.stringify(sidebar, null, 2).replace(/\n/g, '\n    ')},
+    search: { provider: 'local' },
+    outline: { level: [2, 3], label: 'На странице' },
+    docFooter: { prev: 'Предыдущий', next: 'Следующий' },
+    darkModeSwitchLabel: 'Тема',
+    returnToTopLabel: 'Наверх',
+    sidebarMenuLabel: 'Разделы',
+  },
+});
+`, 'utf8');
+
+console.log('✓ notes-src/ обновлён: ' + pages + ' страниц вопросов, ' +
+  TASKS.length + ' задач, ' + DECKS.length + ' разделов');

@@ -272,6 +272,27 @@ h3 { font-size: var(--step-1); font-weight: 900; margin: 0 0 8px; letter-spacing
 .stat.is-review .n { color: var(--review); }
 .stat.is-known .n { color: var(--known); }
 
+.session-note { color: var(--muted); font-size: var(--step--1); margin: 14px 0 0; max-width: 64ch; }
+.session {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 1px; background: var(--line); border: 1px solid var(--line); margin-top: 20px;
+}
+.session-card {
+  background: var(--paper); padding: 20px; border: 0; cursor: pointer;
+  text-align: left; font-family: var(--sans); color: var(--ink);
+  display: flex; flex-direction: column; gap: 8px; transition: background .15s;
+}
+.session-card:hover { background: var(--paper-2); }
+.session-kicker {
+  font-size: 11px; font-weight: 900; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--muted);
+}
+.session-n {
+  font-size: var(--step-3); font-weight: 300; line-height: 1;
+  letter-spacing: -.03em; font-variant-numeric: tabular-nums;
+}
+.session-what { font-size: var(--step--1); color: var(--muted); }
+
 .plan { margin-top: 56px; border-top: 1px solid var(--line); }
 .plan-day {
   display: grid; grid-template-columns: 60px 1fr; gap: 20px;
@@ -597,8 +618,17 @@ details.solution > div { margin-top: 20px; }
 }
 .answer-field:focus { outline: none; border-color: var(--accent); }
 .answer-field::placeholder { color: var(--muted); }
-.answer-actions { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+.answer-actions { display: flex; align-items: center; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
 .answer-actions .spacer { flex: 1; }
+.pill-mic { border-color: var(--line-2); }
+.pill-mic.is-recording {
+  border-color: var(--review); color: var(--review); background: var(--review-bg);
+}
+.voice-timer {
+  font-family: var(--mono); font-size: 12px; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.voice-timer.over { color: var(--review); }
 
 .grade:not(:empty) { margin-top: 24px; border-top: 1px solid var(--line); padding-top: 20px; }
 .grade-waiting { color: var(--muted); font-size: var(--step--1); margin: 0; }
@@ -631,6 +661,25 @@ details.solution > div { margin-top: 20px; }
 }
 .grade-phrasing p { margin: 0; font-size: var(--step--1); }
 
+/* ── Свои истории ───────────────────────────────────────────── */
+.story { border: 1px solid var(--line-2); padding: 22px 24px; margin-top: 26px; }
+.story-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.story-title { font-size: var(--step-1); font-weight: 900; letter-spacing: -.01em; }
+.story-timing {
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+  font-variant-numeric: tabular-nums; margin-left: auto;
+}
+.story-timing.over { color: var(--review); }
+.story-hint { color: var(--muted); font-size: var(--step--1); margin: 8px 0 20px; max-width: 68ch; }
+.story-field { margin-bottom: 16px; }
+.story-label {
+  display: block; font-size: 11px; font-weight: 900; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--ink); margin-bottom: 3px;
+}
+.story-fieldhint {
+  display: block; font-size: var(--step--1); color: var(--muted); margin-bottom: 8px;
+}
+
 /* ── Mock mode ──────────────────────────────────────────────── */
 .mock-head {
   display: flex; align-items: baseline; gap: 20px; flex-wrap: wrap;
@@ -650,6 +699,12 @@ details.solution > div { margin-top: 20px; }
 }
 
 /* ── Misc ───────────────────────────────────────────────────── */
+.notes-link {
+  font-size: 11px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--muted); text-decoration: none; white-space: nowrap;
+}
+.notes-link:hover { color: var(--ink); }
+
 .sync {
   font-size: 10px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase;
   color: var(--muted);
@@ -686,6 +741,7 @@ details.solution > div { margin-top: 20px; }
         <span id="overallPct">0%</span>
         <div class="bar" style="width:90px"><i id="overallBar" style="width:0%"></i></div>
       </div>
+      <a class="notes-link" href="notes/">Конспекты ↗</a>
       <span class="sync" id="syncState"></span>
       <button class="icon-btn" id="themeBtn" title="Сменить тему" aria-label="Сменить тему">◐</button>
     </div>
@@ -5187,6 +5243,7 @@ const ALL_CARDS = DECKS.flatMap(d => d.cards.map(c => ({ ...c, deck: d.id, deckT
 let progress = {};          // cardId -> 'known' | 'review'
 let taskCode = {};          // taskId -> код, написанный пользователем
 let taskSolved = {};        // taskId -> true, когда все проверки прошли
+let stories = {};           // slotId -> { s, t, a, r } — свои STAR-истории
 let progressUpdatedAt = 0;
 let db = null;
 
@@ -5219,6 +5276,7 @@ function loadLocal() {
     progress = parsed.progress || {};
     taskCode = parsed.taskCode || {};
     taskSolved = parsed.taskSolved || {};
+    stories = parsed.stories || {};
     progressUpdatedAt = parsed.updatedAt || 0;
   } catch (e) { /* приватный режим или испорченные данные — начинаем с чистого листа */ }
 }
@@ -5226,8 +5284,18 @@ function loadLocal() {
 function saveLocal() {
   try {
     localStorage.setItem(STORAGE_KEY,
-      JSON.stringify({ progress, taskCode, taskSolved, updatedAt: progressUpdatedAt }));
+      JSON.stringify({ progress, taskCode, taskSolved, stories, updatedAt: progressUpdatedAt }));
   } catch (e) { /* запись недоступна — прогресс живёт только в этой вкладке */ }
+}
+
+let storySaveTimer = null;
+function scheduleStorySave() {
+  clearTimeout(storySaveTimer);
+  storySaveTimer = setTimeout(() => {
+    progressUpdatedAt = Date.now();
+    saveLocal();
+    pushRemote();
+  }, 800);
 }
 
 let pushTimer = null;
@@ -5235,7 +5303,7 @@ function pushRemote() {
   if (!db) return;
   clearTimeout(pushTimer);
   pushTimer = setTimeout(() => {
-    db.doc('progress/state').set({ progress, taskCode, taskSolved, updatedAt: progressUpdatedAt })
+    db.doc('progress/state').set({ progress, taskCode, taskSolved, stories, updatedAt: progressUpdatedAt })
       .then(() => setSync('синхронизировано'))
       .catch(() => setSync('локально'));
   }, 600);
@@ -5261,6 +5329,7 @@ async function initRemote() {
         progress = remote.progress || {};
         taskCode = remote.taskCode || {};
         taskSolved = remote.taskSolved || {};
+        stories = remote.stories || {};
         progressUpdatedAt = remote.updatedAt || 0;
         saveLocal();
         render();
@@ -5329,6 +5398,7 @@ const NAV = [
   { id: 'quiz', label: 'Тесты' },
   { id: 'code', label: 'Лайвкодинг' },
   { id: 'mock', label: 'Мок-интервью' },
+  { id: 'stories', label: 'Мои истории' },
 ];
 
 function el(tag, className, text) {
@@ -5416,6 +5486,90 @@ function renderHeaderProgress() {
 
 /* ── Dashboard ── */
 
+/**
+ * Что делать прямо сейчас. Приложение знает прогресс и знает частоту
+ * вопросов — из этого собирается конкретный подход минут на сорок,
+ * вместо «вот 440 карточек, разбирайся».
+ * Приоритет: сначала то, что отмечено на повтор, потом непройденные
+ * частые вопросы, дальше редкие.
+ */
+function buildSession() {
+  const all = DECKS.flatMap(d => d.cards.map(c => ({ ...c, deck: d.id, deckTitle: d.title })));
+  const weight = (c) => (progress[c.id] === 'review' ? 100 : 0) + (c.freq || 2) * 10;
+
+  const pending = all
+    .filter(c => progress[c.id] !== 'known')
+    .sort((a, b) => weight(b) - weight(a));
+
+  const unsolved = TASKS.filter(t => !taskSolved[t.id] &&
+    (typeof TASK_TESTS !== 'undefined' && TASK_TESTS[t.id]));
+
+  return {
+    cards: pending.slice(0, 8),
+    review: pending.filter(c => progress[c.id] === 'review').length,
+    tasks: unsolved.filter(t => t.must).slice(0, 2),
+    quizDeck: pending.length ? pending[0].deck : 'all',
+  };
+}
+
+function renderSession(wrap) {
+  const plan = buildSession();
+  if (!plan.cards.length && !plan.tasks.length) return;
+
+  const head = el('div', 'eyebrow', 'Что делать сейчас');
+  head.style.marginTop = '48px';
+  wrap.appendChild(head);
+
+  const note = el('p', 'session-note');
+  note.textContent = plan.review
+    ? 'Начни с того, что отмечено на повтор — таких вопросов ' + plan.review +
+      '. Дальше идут частые из непройденных.'
+    : 'Вопросы отсортированы по частоте: сверху то, что спрашивают почти на каждом интервью.';
+  wrap.appendChild(note);
+
+  const grid = el('div', 'session');
+
+  const cardsBox = el('button', 'session-card');
+  cardsBox.appendChild(el('div', 'session-kicker', 'Карточки'));
+  cardsBox.appendChild(el('div', 'session-n', String(plan.cards.length)));
+  cardsBox.appendChild(el('div', 'session-what', plan.cards[0]
+    ? 'Начать с: ' + plan.cards[0].q.slice(0, 64) : ''));
+  cardsBox.addEventListener('click', () => {
+    const card = plan.cards[0];
+    ui.view = 'cards'; ui.deck = card.deck; ui.filter = 'all'; ui.query = '';
+    ui.listMode = false; ui.revealed = false;
+    const deck = DECKS.find(d => d.id === card.deck);
+    ui.index = Math.max(0, deck.cards.findIndex(c => c.id === card.id));
+    render();
+  });
+  grid.appendChild(cardsBox);
+
+  if (plan.tasks.length) {
+    const taskBox = el('button', 'session-card');
+    taskBox.appendChild(el('div', 'session-kicker', 'Задача руками'));
+    taskBox.appendChild(el('div', 'session-n', String(plan.tasks.length)));
+    taskBox.appendChild(el('div', 'session-what', plan.tasks[0].title));
+    taskBox.addEventListener('click', () => {
+      ui.view = 'code'; ui.task = plan.tasks[0].id; render();
+    });
+    grid.appendChild(taskBox);
+  }
+
+  if (typeof QUIZ !== 'undefined' && QUIZ.length) {
+    const quizBox = el('button', 'session-card');
+    quizBox.appendChild(el('div', 'session-kicker', 'Тест на проверку'));
+    quizBox.appendChild(el('div', 'session-n', '10'));
+    quizBox.appendChild(el('div', 'session-what', 'Вопросы вперемешку, ошибки уйдут на повтор'));
+    quizBox.addEventListener('click', () => {
+      ui.view = 'quiz'; ui.quizDeck = 'all'; ui.quizSize = 10; ui.quiz = null;
+      startQuiz(); render();
+    });
+    grid.appendChild(quizBox);
+  }
+
+  wrap.appendChild(grid);
+}
+
 function viewDash() {
   const wrap = document.createDocumentFragment();
   const s = overallStats();
@@ -5448,6 +5602,12 @@ function viewDash() {
     stats.appendChild(cell);
   }
   wrap.appendChild(stats);
+
+  renderSession(wrap);
+
+  const decksHead = el('div', 'eyebrow', 'Разделы');
+  decksHead.style.marginTop = '48px';
+  wrap.appendChild(decksHead);
 
   const grid = el('div', 'deck-grid');
   for (const deck of DECKS) {
@@ -5810,6 +5970,40 @@ function renderGrade(container, grade) {
   }
 }
 
+/* ── Ответ голосом ──────────────────────────────────────────────
+   Речь распознаёт сам браузер (Web Speech API): в Chrome работает,
+   в Safari частично, в Firefox нет. Кнопка появляется только там,
+   где API доступен — в остальных случаях остаётся обычный ввод. */
+
+const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+const voiceAvailable = () => Boolean(SpeechRecognitionCtor);
+
+function createDictation(onText, onStop) {
+  const recognition = new SpeechRecognitionCtor();
+  recognition.lang = 'ru-RU';
+  recognition.continuous = true;
+  recognition.interimResults = true;
+
+  let settled = '';   // распознанное окончательно, промежуточное дописывается сверху
+  recognition.onresult = (event) => {
+    let interim = '';
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const chunk = event.results[i][0].transcript;
+      if (event.results[i].isFinal) settled += chunk;
+      else interim += chunk;
+    }
+    onText((settled + interim).trim());
+  };
+  recognition.onerror = (event) => onStop(event.error);
+  recognition.onend = () => onStop(null);
+
+  return {
+    start: () => recognition.start(),
+    stop: () => recognition.stop(),
+    seed: (text) => { settled = text ? text + ' ' : ''; },
+  };
+}
+
 /** Поле свободного ответа с проверкой через Claude */
 function buildAnswerBox(card, onGraded) {
   const wrap = el('section', 'answer-box');
@@ -5829,6 +6023,55 @@ function buildAnswerBox(card, onGraded) {
   const actions = el('div', 'answer-actions');
   const checkBtn = el('button', 'pill pill-primary', 'Проверить ответ');
   actions.appendChild(checkBtn);
+
+  // Ответ голосом: на интервью ты говоришь, а не печатаешь, и длина
+  // сказанного — отдельная проблема, поэтому рядом идёт секундомер
+  if (voiceAvailable()) {
+    const micBtn = el('button', 'pill pill-mic', '● Говорить');
+    const timerLabel = el('span', 'voice-timer');
+    let dictation = null;
+    let ticking = null;
+    let startedAt = 0;
+
+    const stopDictation = (error) => {
+      clearInterval(ticking);
+      ticking = null;
+      dictation = null;
+      micBtn.classList.remove('is-recording');
+      micBtn.textContent = '● Говорить';
+      if (error && error !== 'aborted' && error !== 'no-speech') {
+        timerLabel.textContent = 'микрофон недоступен';
+      }
+    };
+
+    micBtn.addEventListener('click', () => {
+      if (dictation) { dictation.stop(); return; }
+      try {
+        dictation = createDictation(
+          (text) => { field.value = text; ui.drafts[card.id] = text; },
+          stopDictation
+        );
+      } catch (e) {
+        timerLabel.textContent = 'распознавание недоступно';
+        return;
+      }
+      dictation.seed(field.value.trim());
+      startedAt = Date.now();
+      timerLabel.textContent = '0:00';
+      ticking = setInterval(() => {
+        const sec = Math.floor((Date.now() - startedAt) / 1000);
+        timerLabel.textContent = Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
+        timerLabel.classList.toggle('over', sec > 90);
+      }, 500);
+      micBtn.classList.add('is-recording');
+      micBtn.textContent = '■ Стоп';
+      dictation.start();
+    });
+
+    actions.appendChild(micBtn);
+    actions.appendChild(timerLabel);
+  }
+
   actions.appendChild(el('span', 'spacer'));
   wrap.appendChild(actions);
 
@@ -6150,6 +6393,156 @@ function viewCode() {
   return wrap;
 }
 
+/* ── Свои истории для поведенческой секции ──────────────────────
+   Шесть историй закрывают почти все поведенческие вопросы. Колода
+   даёт каркас, но отвечать придётся своим опытом — поэтому здесь он
+   и живёт: пишешь, проверяешь через Claude, репетируешь вслух. */
+
+const STORY_SLOTS = [
+  { id: 'hard', title: 'Сложная техническая задача',
+    hint: 'Самое трудное, что делал. Заодно закрывает вопрос «проект, которым гордишься».' },
+  { id: 'conflict', title: 'Конфликт или несогласие',
+    hint: 'Спор по техрешению: как аргументировал, чем кончилось. Важно уважение к оппоненту и данные вместо эмоций.' },
+  { id: 'fail', title: 'Провал или ошибка',
+    hint: 'Уронил прод, ошибся в оценке, выбрал не ту технологию. Главное — что изменил в процессе после этого.' },
+  { id: 'mentor', title: 'Менторство и влияние',
+    hint: 'Растил джуна, внедрил процесс, улучшил жизнь команде. Влияние за пределами своего кода.' },
+  { id: 'deadline', title: 'Дедлайн и приоритизация',
+    hint: 'Не всё успевали: как резал скоуп и как заранее коммуницировал риски.' },
+  { id: 'initiative', title: 'Инициатива',
+    hint: 'Улучшил что-то без указания сверху, с обоснованием ценности для бизнеса.' },
+];
+
+const STORY_FIELDS = [
+  { id: 's', label: 'Ситуация', hint: 'Контекст в двух предложениях: где, когда, что за продукт.' },
+  { id: 't', label: 'Задача', hint: 'Что нужно было сделать и почему это была твоя ответственность.' },
+  { id: 'a', label: 'Действия', hint: 'Что сделал именно ты. «Я», а не «мы». Это самая длинная часть.' },
+  { id: 'r', label: 'Результат', hint: 'Чем кончилось, желательно с цифрами. И чему это тебя научило.' },
+];
+
+/** Речь идёт примерно 130 слов в минуту — по объёму видно, уложишься ли */
+function storyMinutes(story) {
+  const words = STORY_FIELDS
+    .map(f => (story[f.id] || '').split(/\s+/).filter(Boolean).length)
+    .reduce((a, b) => a + b, 0);
+  return { words, minutes: words / 130 };
+}
+
+function storyPrompt(slot, story) {
+  return [
+    'Ты — интервьюер, который ведёт поведенческую секцию на позицию senior frontend.',
+    'Кандидат подготовил историю по схеме STAR. Разбери её строго, но по делу.',
+    '',
+    'ТИП ИСТОРИИ: ' + slot.title,
+    'ЧТО ЗДЕСЬ ПРОВЕРЯЮТ: ' + slot.hint,
+    '',
+    'ИСТОРИЯ КАНДИДАТА:',
+    ...STORY_FIELDS.map(f => f.label.toUpperCase() + ': ' + (story[f.id] || '(пусто)')),
+    '',
+    'Проверь по критериям:',
+    '1. Все четыре части STAR на месте и соразмерны? Типичная беда — раздутый контекст и скомканные действия.',
+    '2. Видно ли, что сделал ИМЕННО кандидат, а не команда? Ищи «мы» там, где должно быть «я».',
+    '3. Есть ли измеримый результат? Если цифр нет — предложи, какие можно было бы привести.',
+    '4. Уложится ли в 2–3 минуты вслух?',
+    '5. Есть ли красные флаги: негатив о коллегах, перекладывание вины, отсутствие выводов?',
+    '',
+    'Верни СТРОГО JSON без разметки вокруг:',
+    '{',
+    '  "score": число от 0 до 5,',
+    '  "verdict": "одна фраза: сработает такая история на интервью или нет",',
+    '  "correct": ["что уже сильно"],',
+    '  "missing": ["чего не хватает"],',
+    '  "wrong": ["что вредит: красные флаги, размытые формулировки"],',
+    '  "phrasing": "как усилить самую слабую часть, 2-3 предложения с примером формулировки"',
+    '}',
+    '',
+    'Пиши по-русски, конкретно, без похвал ради похвал.',
+  ].join('\n');
+}
+
+function viewStories() {
+  const wrap = document.createDocumentFragment();
+  wrap.appendChild(el('div', 'eyebrow', 'Мои истории'));
+  wrap.appendChild(el('h2', null, 'Шесть историй по STAR'));
+  wrap.appendChild(el('p', 'lede',
+    'Эти шесть закрывают около 90% поведенческих вопросов. Написать их нужно один раз, ' +
+    'дальше — репетировать вслух. Ориентир по объёму: 260–390 слов, это как раз две-три минуты речи.'));
+
+  for (const slot of STORY_SLOTS) {
+    const story = stories[slot.id] || {};
+    const { words, minutes } = storyMinutes(story);
+    const filled = STORY_FIELDS.every(f => (story[f.id] || '').trim().length > 10);
+
+    const box = el('section', 'story');
+
+    const head = el('div', 'story-head');
+    head.appendChild(el('span', 'story-title', slot.title));
+    if (filled) head.appendChild(el('span', 'tag tag-known', 'Готова'));
+    else if (words) head.appendChild(el('span', 'tag tag-review', 'Черновик'));
+    if (words) {
+      const timing = el('span', 'story-timing' + (minutes > 3 ? ' over' : ''));
+      timing.textContent = words + ' слов · ' + minutes.toFixed(1) + ' мин вслух';
+      head.appendChild(timing);
+    }
+    box.appendChild(head);
+    box.appendChild(el('p', 'story-hint', slot.hint));
+
+    for (const field of STORY_FIELDS) {
+      const row = el('div', 'story-field');
+      const label = el('label', 'story-label', field.label);
+      label.htmlFor = 'story-' + slot.id + '-' + field.id;
+      row.appendChild(label);
+      row.appendChild(el('span', 'story-fieldhint', field.hint));
+
+      const area = el('textarea', 'answer-field');
+      area.id = 'story-' + slot.id + '-' + field.id;
+      area.rows = field.id === 'a' ? 5 : 3;
+      area.value = story[field.id] || '';
+      area.addEventListener('input', () => {
+        stories[slot.id] = stories[slot.id] || {};
+        stories[slot.id][field.id] = area.value;
+        scheduleStorySave();
+      });
+      row.appendChild(area);
+      box.appendChild(row);
+    }
+
+    const actions = el('div', 'answer-actions');
+    const result = el('div', 'grade');
+
+    if (sampleReady) {
+      const check = el('button', 'pill pill-primary', 'Разобрать историю');
+      check.addEventListener('click', async () => {
+        check.disabled = true;
+        check.textContent = 'Читаю…';
+        result.textContent = '';
+        result.appendChild(el('p', 'grade-waiting', 'Интервьюер читает историю…'));
+        try {
+          const sample = await getSample();
+          if (!sample) throw new Error('Разбор недоступен в этом окружении');
+          renderGrade(result, await sample.json(storyPrompt(slot, stories[slot.id] || {})));
+        } catch (error) {
+          result.textContent = '';
+          const box2 = el('div', 'run-error');
+          box2.appendChild(el('div', 'run-error-title', 'Не получилось разобрать'));
+          box2.appendChild(el('p', null, String((error && error.message) || error)));
+          result.appendChild(box2);
+        }
+        check.disabled = false;
+        check.textContent = 'Разобрать ещё раз';
+      });
+      actions.appendChild(check);
+    }
+    actions.appendChild(el('span', 'spacer'));
+    box.appendChild(actions);
+    box.appendChild(result);
+
+    wrap.appendChild(box);
+  }
+
+  return wrap;
+}
+
 /* ── Тесты с вариантами ответа ──────────────────────────────── */
 
 const quizPool = () => (typeof QUIZ !== 'undefined' ? QUIZ : []);
@@ -6164,6 +6557,7 @@ function startQuiz() {
     pos: 0,
     picked: null,      // выбранный вариант текущего вопроса, null пока не ответил
     results: [],
+    retried: new Set(),
     startedAt: Date.now(),
     done: false,
   };
@@ -6174,7 +6568,14 @@ function answerQuiz(index) {
   if (!session || session.picked !== null) return;   // ответ уже дан
   const item = session.queue[session.pos];
   session.picked = index;
-  session.results.push({ item, picked: index, correct: index === item.correct });
+  const correct = index === item.correct;
+  session.results.push({ item, picked: index, correct });
+
+  // Промах возвращается в конец очереди: вопрос закрыт, только когда отвечен верно
+  if (!correct && !session.retried.has(item.id)) {
+    session.retried.add(item.id);
+    session.queue.push(item);
+  }
 
   // Ошибка в тесте — повод вернуться к карточке, поэтому помечаем на повтор
   if (index !== item.correct && item.cardId) setStatus(item.cardId, 'review');
@@ -6263,10 +6664,15 @@ function viewQuiz() {
 
   /* ── Итоги ── */
   if (ui.quiz.done) {
-    const right = ui.quiz.results.filter(r => r.correct).length;
-    const total = ui.quiz.results.length;
+    // Считаем по вопросам, а не по попыткам: повторный верный ответ
+    // на уже проваленный вопрос не превращает промах в успех
+    const first = new Map();
+    for (const r of ui.quiz.results) if (!first.has(r.item.id)) first.set(r.item.id, r);
+    const attempts = [...first.values()];
+    const right = attempts.filter(r => r.correct).length;
+    const total = attempts.length;
     const pct = total ? Math.round((right / total) * 100) : 0;
-    const wrong = ui.quiz.results.filter(r => !r.correct);
+    const wrong = attempts.filter(r => !r.correct);
 
     wrap.appendChild(el('h2', null, 'Тест пройден'));
 
@@ -6595,9 +7001,79 @@ function tickTimer() {
 
 /* ── Root render ── */
 
+/* ── Адресная строка ────────────────────────────────────────────
+   Роутинг на хеше, а не на History API: приложение — один статический
+   файл на GitHub Pages, и путь вида /cards/js/js2 отдал бы 404 при
+   перезагрузке. Хеш работает без серверных правил.
+   В адресе стоит id карточки, а не её номер: порядок меняется при
+   сортировке по частоте, id — нет, поэтому ссылка не протухает. */
+
+let routeLocked = false;   // защита от эха: мы сами меняем хеш
+
+function routeFor() {
+  if (ui.view === 'cards') {
+    const deck = DECKS.find(d => d.id === ui.deck);
+    const card = deck && visibleCards()[ui.index];
+    const tail = ui.listMode ? '/list' : card ? '/' + card.id : '';
+    return '#/cards/' + ui.deck + tail;
+  }
+  if (ui.view === 'code') return '#/code' + (ui.task ? '/' + ui.task : '');
+  if (ui.view === 'quiz') return '#/quiz';
+  if (ui.view === 'mock') return '#/mock';
+  if (ui.view === 'stories') return '#/stories';
+  return '#/';
+}
+
+function syncUrl() {
+  const next = routeFor();
+  if (location.hash === next) return;
+  routeLocked = true;
+  history.replaceState(null, '', next);
+  routeLocked = false;
+}
+
+/** Восстанавливает состояние из адреса. Возвращает false, если адрес не разобран. */
+function applyRoute(hash) {
+  const parts = (hash || '').replace(/^#\/?/, '').split('/').filter(Boolean);
+  const [section, a, b] = parts;
+
+  if (!section || section === 'dash') { ui.view = 'dash'; return true; }
+
+  if (section === 'cards') {
+    ui.view = 'cards';
+    if (a && DECKS.some(d => d.id === a)) ui.deck = a;
+    ui.listMode = b === 'list';
+    ui.revealed = false;
+    if (b && b !== 'list') {
+      const cards = visibleCards();
+      const index = cards.findIndex(c => c.id === b);
+      if (index >= 0) ui.index = index;
+    }
+    return true;
+  }
+
+  if (section === 'code') {
+    ui.view = 'code';
+    ui.task = (a && TASKS.some(t => t.id === a)) ? a : null;
+    return true;
+  }
+
+  if (['quiz', 'mock', 'stories'].includes(section)) {
+    ui.view = section;
+    return true;
+  }
+  return false;
+}
+
+window.addEventListener('hashchange', () => {
+  if (routeLocked) return;         // хеш поменяли мы сами — перерисовывать нечего
+  if (applyRoute(location.hash)) render();
+});
+
 function render() {
   renderNav();
   renderHeaderProgress();
+  syncUrl();
   const app = document.getElementById('app');
   app.textContent = '';
   if (ui.view === 'dash')  app.appendChild(viewDash());
@@ -6605,6 +7081,7 @@ function render() {
   if (ui.view === 'code')  app.appendChild(viewCode());
   if (ui.view === 'quiz')  app.appendChild(viewQuiz());
   if (ui.view === 'mock')  app.appendChild(viewMock());
+  if (ui.view === 'stories') app.appendChild(viewStories());
 
   if (ui.focusSearch) {
     ui.focusSearch = false;
