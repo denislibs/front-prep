@@ -26,6 +26,8 @@ const FILES = [
   ['deck-sd.js', 'DECK_SD_EXTRA'],
   ['deck-beh.js', 'DECK_BEH_EXTRA'],
   ['tasks.js', 'TASKS_EXTRA'],
+  // Разбор мессенджера — отдельным файлом, вливается в колоду System Design
+  ['deck-messenger.js', 'DECK_MESSENGER'],
 ];
 
 function fail(message) {
@@ -139,6 +141,50 @@ for (const file of testFiles) {
 
 chunks.push('const TASK_TESTS = Object.assign({}' +
   testConstNames.map(n => ', ' + n).join('') + ');');
+
+// Тестовые вопросы — файлы research/quiz-*.js, каждый со своей константой
+const quizFiles = fs.existsSync(RESEARCH)
+  ? fs.readdirSync(RESEARCH).filter(f => /^quiz-.*\.js$/.test(f)).sort()
+  : [];
+const quizConstNames = [];
+
+for (const file of quizFiles) {
+  const full = path.join(RESEARCH, file);
+  try {
+    execFileSync(process.execPath, ['--check', full], { stdio: 'pipe' });
+  } catch (e) {
+    fail(file + ' не проходит node --check:\n' + e.stderr.toString());
+  }
+  const source = fs.readFileSync(full, 'utf8');
+  const name = (source.match(/const\s+(QUIZ_[A-Z0-9_]+)\s*=/) || [])[1];
+  if (!name) fail(file + ': не найдено объявление const QUIZ_…');
+
+  let count = 0;
+  try {
+    const items = new Function(source + '; return ' + name + ';')();
+    if (!Array.isArray(items)) fail(name + ' в ' + file + ' — не массив');
+    count = items.length;
+    for (const item of items) {
+      if (!Array.isArray(item.options) || item.options.length !== 4) {
+        fail(file + ': у вопроса ' + item.id + ' должно быть ровно 4 варианта');
+      }
+      if (!(item.correct >= 0 && item.correct <= 3)) {
+        fail(file + ': у вопроса ' + item.id + ' поле correct вне диапазона 0–3');
+      }
+    }
+  } catch (e) {
+    fail('не удалось выполнить ' + file + ': ' + e.message);
+  }
+
+  quizConstNames.push(name);
+  chunks.push('/* ── ' + file + ' ── */\n' + escapeScript(source.trim()));
+  report.push([file, name, count]);
+}
+
+chunks.push('const QUIZ = [].concat(' + (quizConstNames.join(', ') || '') + ');');
+
+// mergeCards объявлена функцией в шаблоне, поэтому доступна здесь по всплытию
+chunks.push("if (typeof DECK_MESSENGER !== 'undefined') mergeCards('sd', DECK_MESSENGER);");
 
 let output = template.replace(MARKER, () => chunks.join('\n\n'));
 
