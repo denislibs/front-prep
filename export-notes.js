@@ -34,6 +34,7 @@ const { DECKS, TASKS, taskCat } = new Function(
 function toMarkdown(html) {
   return html
     .replace(/\s*\n\s*/g, ' ')
+    .replace(/<h4>(.*?)<\/h4>/g, '\n\n### $1\n')
     // нумерованные списки конвертируем первыми, чтобы сохранить порядок пунктов
     .replace(/<ol>([\s\S]*?)<\/ol>/g, (_, inner) => {
       let n = 0;
@@ -64,8 +65,10 @@ DECKS.forEach((deck, i) => {
   const lines = ['# ' + deck.title, '', deck.sub, '', '_Вопросов: ' + deck.cards.length + '_', ''];
   deck.cards.forEach((card, n) => {
     lines.push('## ' + (n + 1) + '. ' + card.q, '');
+    // Код из постановки идёт до ответа — как и в самом тренажёре
+    if (card.snippet) lines.push('```js', card.snippet.trim(), '```', '');
     lines.push(toMarkdown(card.a), '');
-    if (card.code) lines.push('```js', card.code.trim(), '```', '');
+    if (card.code && card.code !== card.snippet) lines.push('```js', card.code.trim(), '```', '');
     if (card.tip) lines.push('> **Что добавит очков.** ' + card.tip, '');
   });
   const name = String(i + 1).padStart(2, '0') + '-' + deck.id + '.md';
