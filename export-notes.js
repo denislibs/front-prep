@@ -203,6 +203,35 @@ for (const [cat, list] of byCat) {
 fs.writeFileSync(path.join(codeDir, 'index.md'), codeIndex.join('\n'), 'utf8');
 sidebar['/code/'] = [{ text: 'Лайвкодинг', items: codeItems }];
 
+/* ── Статьи ──────────────────────────────────────────────────
+   Пишутся руками в articles/ и переносятся как есть: в отличие от
+   карточек, они не выводятся из данных приложения. */
+const ARTICLES = path.join(ROOT, 'articles');
+const articleItems = [];
+
+if (fs.existsSync(ARTICLES)) {
+  const outDir = path.join(DOCS, 'articles');
+  fs.mkdirSync(outDir, { recursive: true });
+
+  const files = fs.readdirSync(ARTICLES)
+    .filter(f => f.endsWith('.md') && f !== 'index.md')
+    .sort();
+
+  for (const file of files) {
+    const source = fs.readFileSync(path.join(ARTICLES, file), 'utf8');
+    fs.writeFileSync(path.join(outDir, file), source, 'utf8');
+    const title = (source.match(/^title:\s*"?(.+?)"?\s*$/m) || [])[1] || file.replace(/\.md$/, '');
+    articleItems.push({ text: title, link: '/articles/' + file.replace(/\.md$/, '') });
+  }
+
+  const listing = ['---', 'title: "Статьи"', '---', '', '# Статьи', '',
+    '_Длинные разборы тем, которые карточками не закрыть: механика, а не факты._', ''];
+  for (const item of articleItems) listing.push('- [' + item.text + '](.' + item.link.replace('/articles', '') + ')');
+  fs.writeFileSync(path.join(outDir, 'index.md'), listing.join('\n'), 'utf8');
+
+  if (articleItems.length) sidebar['/articles/'] = [{ text: 'Статьи', items: articleItems }];
+}
+
 /* ── Главная ── */
 const totalCards = DECKS.reduce((sum, d) => sum + d.cards.length, 0);
 fs.writeFileSync(path.join(DOCS, 'index.md'), [
@@ -225,12 +254,41 @@ fs.writeFileSync(path.join(DOCS, 'index.md'), [
     '    details: ' + quote(d.sub + ' Вопросов: ' + d.cards.length + '.'),
     '    link: /' + d.id + '/',
   ].join('\n')),
+  ...(articleItems.length ? ['  - title: "Статьи"',
+    '    details: ' + quote('Длинные разборы: как работает браузер, событийный цикл и рендеринг. Всего: ' + articleItems.length + '.'),
+    '    link: /articles/'] : []),
   '  - title: "Лайвкодинг"',
   '    details: ' + quote('Задачи с подсказками и разбором решения. Всего: ' + TASKS.length + '.'),
   '    link: /code/',
   '---',
   '',
 ].join('\n'), 'utf8');
+
+/* ── Оформление схем в статьях ── */
+const themeDir = path.join(DOCS, '.vitepress', 'theme');
+fs.mkdirSync(themeDir, { recursive: true });
+fs.writeFileSync(path.join(themeDir, 'index.js'), `import DefaultTheme from 'vitepress/theme';
+import './custom.css';
+export default DefaultTheme;
+`, 'utf8');
+fs.writeFileSync(path.join(themeDir, 'custom.css'), `/* Схемы в статьях: рисуются инлайновым SVG и берут цвета темы,
+   поэтому одинаково читаются в светлом и тёмном оформлении. */
+.diagram {
+  margin: 28px 0;
+  padding: 20px 16px 12px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  background: var(--vp-c-bg-alt);
+}
+.diagram svg { display: block; width: 100%; height: auto; }
+.diagram figcaption {
+  margin-top: 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--vp-c-text-2);
+  text-align: center;
+}
+`, 'utf8');
 
 /* ── Конфиг VitePress ── */
 const vpDir = path.join(DOCS, '.vitepress');
@@ -253,6 +311,7 @@ export default defineConfig({
   themeConfig: {
     nav: ${JSON.stringify([
       { text: 'Тренажёр', link: '../' },
+      ...(articleItems.length ? [{ text: 'Статьи', link: '/articles/' }] : []),
       ...DECKS.map(d => ({ text: d.title, link: '/' + d.id + '/' })),
       { text: 'Лайвкодинг', link: '/code/' },
     ])},
@@ -268,4 +327,5 @@ export default defineConfig({
 `, 'utf8');
 
 console.log('✓ notes-src/ обновлён: ' + pages + ' страниц вопросов, ' +
-  TASKS.length + ' задач, ' + DECKS.length + ' разделов');
+  TASKS.length + ' задач, ' + DECKS.length + ' разделов, ' +
+  articleItems.length + ' статей');
