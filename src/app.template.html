@@ -180,7 +180,7 @@ nav button[aria-current="true"]::after {
 .icon-btn:hover { border-color: var(--ink); color: var(--ink); }
 
 /* ── Layout ─────────────────────────────────────────────────── */
-main { max-width: 1120px; margin: 0 auto; padding: 40px 24px 120px; }
+main { max-width: 1120px; margin: 0 auto; padding: 40px 24px 64px; }
 
 .eyebrow {
   font-size: 11px; font-weight: 900; letter-spacing: .16em;
@@ -650,13 +650,6 @@ details.solution > div { margin-top: 20px; }
 }
 
 /* ── Misc ───────────────────────────────────────────────────── */
-.hint-bar {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
-  background: var(--paper); border-top: 1px solid var(--line);
-  padding: 9px 24px; font-size: 11px; color: var(--muted);
-  display: flex; gap: 18px; justify-content: center; flex-wrap: wrap;
-}
-.hint-bar b { font-family: var(--mono); font-weight: 400; color: var(--ink); }
 .sync {
   font-size: 10px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase;
   color: var(--muted);
@@ -672,10 +665,9 @@ details.solution > div { margin-top: 20px; }
   :root { --step-4: 2.3rem; --step-3: 1.8rem; --step-2: 1.35rem; }
   .header-inner { gap: 12px; padding: 12px 16px; }
   .header-meta { width: 100%; margin-left: 0; }
-  main { padding: 28px 16px 130px; }
+  main { padding: 28px 16px 48px; }
   .card-body { padding: 24px 18px; }
   .card-actions { padding: 16px 18px; }
-  .hint-bar { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -701,13 +693,6 @@ details.solution > div { margin-top: 20px; }
 </header>
 
 <main id="app"></main>
-
-<div class="hint-bar">
-  <span><b>Space</b> показать ответ</span>
-  <span><b>1</b> повторить</span>
-  <span><b>2</b> знаю</span>
-  <span><b>←</b> <b>→</b> листать</span>
-</div>
 
 <script>
 /* ══ CONTENT ══════════════════════════════════════════════════ */
@@ -5719,6 +5704,13 @@ function renderCard(card, total, index, advance, grade) {
   const skip = el('button', 'ghost', 'Дальше →');
     skip.addEventListener('click', () => { advance(); render(); });
     actions.appendChild(skip);
+  }
+
+  // Подсказка живёт в панели карточки, а не в полосе поверх страницы:
+  // она нужна ровно здесь и не отъедает низ экрана на каждом разделе
+  if (ui.view === 'cards' || ui.view === 'mock') {
+    actions.appendChild(el('span', 'kbd-hint',
+      ui.revealed ? '1 — повторить · 2 — знаю · ← → листать' : 'Space — показать ответ'));
   }
   shell.appendChild(actions);
 
