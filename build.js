@@ -183,6 +183,42 @@ for (const file of quizFiles) {
 
 chunks.push('const QUIZ = [].concat(' + (quizConstNames.join(', ') || '') + ');');
 
+// Частота вопросов — файлы research/freq-*.js, сводятся в одну таблицу id → 1..3
+const freqFiles = fs.existsSync(RESEARCH)
+  ? fs.readdirSync(RESEARCH).filter(f => /^freq-.*\.js$/.test(f)).sort()
+  : [];
+const freqConstNames = [];
+
+for (const file of freqFiles) {
+  const full = path.join(RESEARCH, file);
+  try {
+    execFileSync(process.execPath, ['--check', full], { stdio: 'pipe' });
+  } catch (e) {
+    fail(file + ' не проходит node --check:\n' + e.stderr.toString());
+  }
+  const source = fs.readFileSync(full, 'utf8');
+  const name = (source.match(/const\s+(FREQ_[A-Z0-9_]+)\s*=/) || [])[1];
+  if (!name) fail(file + ': не найдено объявление const FREQ_…');
+
+  let count = 0;
+  try {
+    const map = new Function(source + '; return ' + name + ';')();
+    for (const [id, value] of Object.entries(map)) {
+      if (![1, 2, 3].includes(value)) fail(file + ': у ' + id + ' частота ' + value + ', ожидалось 1, 2 или 3');
+    }
+    count = Object.keys(map).length;
+  } catch (e) {
+    fail('не удалось выполнить ' + file + ': ' + e.message);
+  }
+
+  freqConstNames.push(name);
+  chunks.push('/* ── ' + file + ' ── */\n' + escapeScript(source.trim()));
+  report.push([file, name, count]);
+}
+
+chunks.push('const FREQUENCY = Object.assign({}' +
+  freqConstNames.map(n => ', ' + n).join('') + ');');
+
 // mergeCards объявлена функцией в шаблоне, поэтому доступна здесь по всплытию
 chunks.push("if (typeof DECK_MESSENGER !== 'undefined') mergeCards('sd', DECK_MESSENGER);");
 

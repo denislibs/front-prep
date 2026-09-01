@@ -358,6 +358,43 @@ pre code {
   background: none; padding: 0; white-space: pre;
 }
 
+/* Подсветка синтаксиса: классы tok-* расставляет парсер CodeMirror.
+   Цвета берутся из тех же переменных, что и в редакторе, поэтому
+   статический блок кода и песочница выглядят одинаково в обеих темах. */
+.tok-keyword,
+.tok-modifier,
+.tok-controlKeyword,
+.tok-operatorKeyword,
+.tok-definitionKeyword,
+.tok-moduleKeyword     { color: var(--syn-keyword); }
+.tok-string,
+.tok-string2,
+.tok-special           { color: var(--syn-string); }
+.tok-number,
+.tok-bool,
+.tok-null,
+.tok-atom              { color: var(--syn-number); }
+.tok-comment,
+.tok-lineComment,
+.tok-blockComment,
+.tok-docComment        { color: var(--syn-comment); font-style: italic; }
+.tok-function,
+.tok-macroName         { color: var(--syn-func); }
+.tok-propertyName,
+.tok-attributeName     { color: var(--syn-prop); }
+.tok-typeName,
+.tok-className,
+.tok-tagName,
+.tok-namespace         { color: var(--syn-type); }
+.tok-operator,
+.tok-punctuation,
+.tok-separator,
+.tok-bracket,
+.tok-derefOperator     { color: var(--syn-op); }
+.tok-variableName      { color: var(--code-ink); }
+.tok-definition        { color: var(--syn-func); }
+.tok-invalid           { color: var(--review); }
+
 .card-actions {
   display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
   padding: 18px 24px; border-top: 1px solid var(--line); background: var(--paper-2);
@@ -374,7 +411,8 @@ pre code {
 /* ── Livecoding ─────────────────────────────────────────────── */
 .task-list { margin-top: 28px; border-top: 1px solid var(--line); }
 .task-row {
-  width: 100%; display: grid; grid-template-columns: 34px 1fr auto;
+  /* Четвёртая колонка — под метку частоты; у задач лайвкодинга она пустует */
+  width: 100%; display: grid; grid-template-columns: 34px 1fr auto auto;
   gap: 16px; align-items: center; text-align: left;
   padding: 16px 4px; background: none; border: 0; border-bottom: 1px solid var(--line);
   cursor: pointer; font-family: var(--sans); color: var(--ink);
@@ -426,7 +464,9 @@ details.solution > div { margin-top: 20px; }
   padding: 3px 8px; border: 1px solid var(--line-2); color: var(--muted);
 }
 .editor-host { max-height: 460px; overflow: auto; background: var(--code-bg); }
-.editor-host .cm-editor { height: 100%; }
+/* Редактор растёт под содержимое: у задачи со стартовым кодом на три строки
+   не должно быть полуэкрана пустоты, но и прыгать при вводе он не должен */
+.editor-host .cm-editor { height: auto; min-height: 170px; }
 
 .workbench-actions {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
@@ -485,6 +525,14 @@ details.solution > div { margin-top: 20px; }
 
 .task-row .solved { color: var(--known); font-family: var(--mono); }
 .task-row .to-review { color: var(--review); font-family: var(--mono); }
+.freq {
+  font-size: 10px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase;
+  padding: 3px 8px; white-space: nowrap;
+}
+.freq-3 { color: var(--accent); border: 1px solid var(--accent); }
+.freq-2 { color: var(--muted); border: 1px solid var(--line-2); }
+.freq-1 { color: var(--muted); border: 1px dashed var(--line-2); }
+.task-row .freq { align-self: center; }
 .lvl-review { border-color: var(--review); color: var(--review); }
 .chips-note {
   font-size: 11px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase;
@@ -612,6 +660,12 @@ details.solution > div { margin-top: 20px; }
 .sync {
   font-size: 10px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase;
   color: var(--muted);
+}
+
+@media (max-width: 860px) {
+  /* На узком экране метка частоты уступает место самому вопросу */
+  .task-row { grid-template-columns: 28px 1fr auto; }
+  .task-row .freq { display: none; }
 }
 
 @media (max-width: 720px) {
@@ -5116,6 +5170,22 @@ if (typeof DECK_CSS !== 'undefined' && DECK_CSS.length) {
 
 if (typeof TASKS_EXTRA !== 'undefined') TASKS.push(...TASKS_EXTRA);
 
+/* Частота вопроса на интервью: 3 — почти всегда, 2 — регулярно, 1 — редко.
+   Внутри колоды карточки идут от частых к редким, чтобы за неделю до
+   собеседования учить сначала то, что действительно спросят. Сортировка
+   устойчивая: внутри одной частоты исходный порядок сохраняется. */
+const FREQ_LABEL = { 3: 'Спрашивают часто', 2: 'Регулярно', 1: 'Редкий вопрос' };
+
+if (typeof FREQUENCY !== 'undefined') {
+  for (const deck of DECKS) {
+    deck.cards.forEach((card, i) => {
+      card.freq = FREQUENCY[card.id] || 2;
+      card.order = i;
+    });
+    deck.cards.sort((a, b) => b.freq - a.freq || a.order - b.order);
+  }
+}
+
 /* Категории для задач из базового набора — у поздних есть своё поле cat */
 const LEGACY_TASK_CAT = {
   t1: 'Утилиты', t2: 'Утилиты', t3: 'Асинхронность', t4: 'Утилиты', t5: 'Данные',
@@ -5257,6 +5327,7 @@ function visibleCards() {
   let cards = deck.cards;
   if (ui.filter === 'new')    cards = cards.filter(c => !progress[c.id]);
   if (ui.filter === 'review') cards = cards.filter(c => progress[c.id] === 'review');
+  if (ui.filter === 'often')  cards = cards.filter(c => c.freq === 3);
   const query = ui.query.trim().toLowerCase();
   if (query) {
     cards = cards.filter(c =>
@@ -5289,10 +5360,49 @@ function el(tag, className, text) {
 const CODE_QUESTION = /что (выведет|вернёт|напечатает|покажет|произойдёт)|этот код|код ниже|следующий код|порядок вывода|в каком порядке|что не так с этим|найди ошибк/i;
 const mentionsCode = (question) => CODE_QUESTION.test(question);
 
+/**
+ * Подсветка статических блоков кода тем же парсером, что и в редакторе.
+ * Разбираем один раз и раскладываем по span-ам с классами tok-*, а не поднимаем
+ * экземпляр редактора на каждый фрагмент — их на странице бывают десятки.
+ */
+function highlightInto(container, source) {
+  const ready = typeof CM !== 'undefined' && CM.highlightTree && CM.jsxLanguage;
+  if (!ready) {
+    container.textContent = source;   // без библиотеки просто текст, но читаемый
+    return;
+  }
+
+  let cursor = 0;
+  const append = (text, className) => {
+    if (!text) return;
+    if (className) {
+      const span = document.createElement('span');
+      span.className = className;
+      span.textContent = text;
+      container.appendChild(span);
+    } else {
+      container.appendChild(document.createTextNode(text));
+    }
+  };
+
+  try {
+    const tree = CM.jsxLanguage.parser.parse(source);
+    CM.highlightTree(tree, CM.classHighlighter, (from, to, classes) => {
+      append(source.slice(cursor, from), null);   // промежуток без токена
+      append(source.slice(from, to), classes);
+      cursor = to;
+    });
+  } catch (e) {
+    container.textContent = source;               // разбор не удался — отдаём как есть
+    return;
+  }
+  append(source.slice(cursor), null);
+}
+
 function codeBlock(source) {
   const pre = el('pre');
   const code = el('code');
-  code.textContent = source;          // textContent — код не интерпретируется как разметка
+  highlightInto(code, source);
   pre.appendChild(code);
   return pre;
 }
@@ -5425,6 +5535,7 @@ function viewCards() {
   const filters = el('div', 'chips');
   const filterDefs = [
     { id: 'all', label: 'Все' },
+    { id: 'often', label: 'Частые' },
     { id: 'new', label: 'Не пройдено' },
     { id: 'review', label: 'На повтор' },
   ];
@@ -5517,6 +5628,7 @@ function renderCardList(cards) {
       (card.snippet ? 'с кодом · ' : '') + 'разбор на ' + words + ' слов'));
     row.appendChild(mid);
 
+    if (card.freq) row.appendChild(el('span', 'freq freq-' + card.freq, FREQ_LABEL[card.freq]));
     row.appendChild(el('span', 'lvl' + (status === 'review' ? ' lvl-review' : ''),
       status === 'known' ? 'Знаю' : status === 'review' ? 'На повтор' : 'Открыть'));
 
@@ -5537,6 +5649,7 @@ function renderCard(card, total, index, advance, grade) {
 
   const head = el('div', 'card-head');
   head.appendChild(el('span', null, card.deckTitle || DECKS.find(d => d.id === ui.deck).title));
+  if (card.freq) head.appendChild(el('span', 'freq freq-' + card.freq, FREQ_LABEL[card.freq]));
   const status = progress[card.id];
   if (status === 'known')  head.appendChild(el('span', 'tag tag-known', 'Знаю'));
   if (status === 'review') head.appendChild(el('span', 'tag tag-review', 'На повтор'));
