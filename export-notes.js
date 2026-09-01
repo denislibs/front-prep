@@ -80,6 +80,13 @@ function toMarkdown(html) {
  * вокруг них даёт неверную вложенность.
  */
 function fenceInline(code) {
+  // Двойные фигурные скобки Vue трактует как подстановку даже внутри
+  // обратных кавычек, поэтому такой код отдаём тегом с v-pre
+  if (code.includes('{{')) {
+    const escaped = code
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return '<code v-pre>' + escaped + '</code>';
+  }
   const longest = (code.match(/`+/g) || []).reduce((max, run) => Math.max(max, run.length), 0);
   const ticks = '`'.repeat(longest + 1);
   const pad = /^`|`$/.test(code) ? ' ' : '';
@@ -309,11 +316,18 @@ export default defineConfig({
   ignoreDeadLinks: [/\\.\\.\\/\\.\\.\\//],
   lastUpdated: false,
   themeConfig: {
+    // Разделы — выпадающим списком: десять пунктов с русскими названиями
+    // в строку не влезают и ломают шапку на узких экранах
     nav: ${JSON.stringify([
       { text: 'Тренажёр', link: '../' },
       ...(articleItems.length ? [{ text: 'Статьи', link: '/articles/' }] : []),
-      ...DECKS.map(d => ({ text: d.title, link: '/' + d.id + '/' })),
-      { text: 'Лайвкодинг', link: '/code/' },
+      {
+        text: 'Разделы',
+        items: [
+          ...DECKS.map(d => ({ text: d.title, link: '/' + d.id + '/' })),
+          { text: 'Лайвкодинг', link: '/code/' },
+        ],
+      },
     ])},
     sidebar: ${JSON.stringify(sidebar, null, 2).replace(/\n/g, '\n    ')},
     search: { provider: 'local' },

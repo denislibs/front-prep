@@ -4,6 +4,7 @@
 
 **Тренажёр:** https://denislibs.github.io/front-prep/
 **Конспекты:** https://denislibs.github.io/front-prep/notes/ — те же материалы для чтения: страница на вопрос, поиск по всему, лёгкие страницы для телефона
+**Статьи:** https://denislibs.github.io/front-prep/notes/articles/ — 13 длинных разборов: как работает браузер, замыкания, `this`, прототипы, промисы, память и другое
 
 ## С чего начать
 
@@ -50,6 +51,7 @@ research/tasks.js     задачи на лайвкодинг
 research/tests-*.js   автотесты к задачам
 research/quiz-*.js    тестовые вопросы с вариантами ответа
 research/freq-*.js    частота вопроса на интервью: id → 1, 2 или 3
+articles/*.md         статьи — пишутся руками, стандарт в docs/article-style.md
 notes-src/            исходники сайта конспектов (генерируются, в git не хранятся)
 dist/                 собранный сайт (делается в CI, в git не хранится)
 .github/workflows/    сборка и публикация на Pages
