@@ -35431,6 +35431,7 @@ document.getElementById('themeBtn').addEventListener('click', () => {
 /* ══ BOOT ═════════════════════════════════════════════════════ */
 
 loadLocal();
+applyRoute(location.hash);   // адрес разбираем до первой отрисовки, иначе render его затрёт
 render();
 getSample();          // если возможность есть, блок свободного ответа появится сам
 setSync('локально');
