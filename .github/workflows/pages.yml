@@ -45,8 +45,10 @@ jobs:
         # Тренажёр лежит в корне, конспекты — в /notes/ (туда пишет vitepress)
         run: |
           cp index.html dist/index.html
+          cp -r assets dist/assets
           test -s dist/index.html
           test -s dist/notes/index.html
+          test -s dist/assets/sandbox-libs.js
           echo "страниц конспектов: $(find dist/notes -name '*.html' | wc -l)"
 
       - uses: actions/configure-pages@v5

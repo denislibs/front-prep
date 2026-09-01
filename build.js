@@ -42,14 +42,22 @@ const VENDOR_DIR = path.join(ROOT, 'src', 'vendor');
 // Скриптом на страницу подключается только редактор — он нужен самому приложению
 const VENDOR_FILES = ['codemirror.js'];
 
-// Остальное встраивается строками: эти исходники нужны не странице, а песочнице,
-// которая поднимает их внутри воркера и iframe. Так они не дублируются по весу.
+// Окружение проверок нужно песочнице внутри воркера и iframe, поэтому
+// встраивается строками. Оно маленькое и лежит в странице всегда.
 const SOURCE_CONSTANTS = [
-  ['HARNESS_SOURCE', 'src/sandbox/harness.js'],
-  ['DOM_HARNESS_SOURCE', 'src/sandbox/dom-harness.js'],
-  ['REACT_SOURCE', 'src/vendor/react-bundle.js'],
-  ['SUCRASE_SOURCE', 'src/vendor/sucrase.js'],
+  ['harness', 'src/sandbox/harness.js'],
+  ['dom', 'src/sandbox/dom-harness.js'],
 ];
+
+// А это тяжёлое и нужно не всем: React с транспайлером — только для
+// задач с DOM и React, редактор — только в разделе лайвкодинга.
+// В сборке для Pages они выносятся в отдельные файлы и грузятся по
+// требованию; в самодостаточной версии для артефакта остаются внутри.
+const LAZY_SOURCES = [
+  ['react', 'src/vendor/react-bundle.js'],
+  ['sucrase', 'src/vendor/sucrase.js'],
+];
+const EDITOR_FILE = 'src/vendor/codemirror.js';
 const RUNNER_FILE = 'src/sandbox/runner.js';
 
 /**
@@ -224,38 +232,82 @@ chunks.push("if (typeof DECK_MESSENGER !== 'undefined') mergeCards('sd', DECK_ME
 
 let output = template.replace(MARKER, () => chunks.join('\n\n'));
 
-// Песочница: исходники окружения строками плюс сам исполнитель
-if (output.includes(SANDBOX_MARKER)) {
-  const parts = [];
+/**
+ * Собирает страницу в двух видах:
+ *
+ *  app.html   — самодостаточный: библиотеки внутри. Нужен артефакту,
+ *               который состоит из одного файла и не может подтягивать соседей.
+ *  index.html — для Pages: тяжёлые библиотеки вынесены в assets/ и грузятся
+ *               по требованию. React с транспайлером нужен только задачам
+ *               с DOM и React, редактор — только в лайвкодинге, а первая
+ *               загрузка не должна тащить полтора мегабайта ради этого.
+ */
+function assemble({ inlineHeavy }) {
+  let page = output;
+  const assets = {};
+
+  const sandboxParts = [];
+  const sources = {};
   for (const [name, file] of SOURCE_CONSTANTS) {
     const full = path.join(ROOT, file);
     if (!fs.existsSync(full)) fail('нет файла ' + file + ', нужного песочнице');
-    const source = fs.readFileSync(full, 'utf8');
-    parts.push('const ' + name + ' = ' + asJsString(source) + ';');
-    report.push([file, name, Math.round(source.length / 1024)]);
+    sources[name] = fs.readFileSync(full, 'utf8');
   }
+
+  const heavy = {};
+  for (const [name, file] of LAZY_SOURCES) {
+    const full = path.join(ROOT, file);
+    if (!fs.existsSync(full)) fail('нет файла ' + file + ', нужного песочнице');
+    heavy[name] = fs.readFileSync(full, 'utf8');
+  }
+
+  // Таблица исходников песочницы: лёгкое всегда внутри, тяжёлое — по режиму
+  const table = Object.entries(sources)
+    .map(([name, src]) => '  ' + name + ': ' + asJsString(src) + ',')
+    .concat(Object.keys(heavy).map(name => inlineHeavy
+      ? '  ' + name + ': ' + asJsString(heavy[name]) + ','
+      : '  ' + name + ': null,'));
+  sandboxParts.push('const SANDBOX_SOURCES = {\n' + table.join('\n') + '\n};');
+
+  if (!inlineHeavy) {
+    const bundle = Object.entries(heavy)
+      .map(([name, src]) => 'SANDBOX_SOURCES.' + name + ' = ' + asJsString(src) + ';')
+      .join('\n');
+    assets['sandbox-libs.js'] = bundle;
+    sandboxParts.push("const LAZY_ASSETS = { sandbox: 'assets/sandbox-libs.js', editor: 'assets/codemirror.js' };");
+  }
+
   const runner = fs.readFileSync(path.join(ROOT, RUNNER_FILE), 'utf8');
-  parts.push(escapeScript(runner));
-  report.push([RUNNER_FILE, 'исполнитель', Math.round(runner.length / 1024)]);
-  output = output.replace(SANDBOX_MARKER, () => parts.join('\n\n'));
+  sandboxParts.push(escapeScript(runner));
+  page = page.replace(SANDBOX_MARKER, () => sandboxParts.join('\n\n'));
+
+  // Редактор: внутри страницы для артефакта, отдельным файлом для Pages
+  const editor = fs.readFileSync(path.join(ROOT, EDITOR_FILE), 'utf8');
+  if (inlineHeavy) {
+    page = page.replace(VENDOR_MARKER, () => '<script>\n' + escapeScript(editor) + '\n</script>');
+  } else {
+    assets['codemirror.js'] = editor;
+    page = page.replace(VENDOR_MARKER, () => '');
+  }
+
+  return { page, assets };
 }
 
-// Библиотеки идут отдельным тегом до приложения: UMD-сборкам нужен верхний
-// уровень скрипта, чтобы объявить React, Sucrase и CM как глобальные
-if (output.includes(VENDOR_MARKER)) {
-  const parts = [];
-  for (const file of VENDOR_FILES) {
-    const full = path.join(VENDOR_DIR, file);
-    if (!fs.existsSync(full)) fail('нет библиотеки src/vendor/' + file + ' (см. src/vendor/README.md)');
-    const source = fs.readFileSync(full, 'utf8');
-    parts.push('/* ' + file + ' */\n' + escapeScript(source));
-    report.push(['vendor/' + file, 'библиотека', Math.round(source.length / 1024)]);
-  }
-  output = output.replace(VENDOR_MARKER, () => '<script>\n' + parts.join('\n;\n') + '\n</script>');
+const monolith = assemble({ inlineHeavy: true });
+fs.writeFileSync(OUTPUT, monolith.page, 'utf8');
+
+const split = assemble({ inlineHeavy: false });
+fs.writeFileSync(path.join(ROOT, 'index.html'), split.page, 'utf8');
+
+const assetsDir = path.join(ROOT, 'assets');
+fs.rmSync(assetsDir, { recursive: true, force: true });
+fs.mkdirSync(assetsDir, { recursive: true });
+for (const [name, content] of Object.entries(split.assets)) {
+  fs.writeFileSync(path.join(assetsDir, name), content, 'utf8');
+  report.push(['assets/' + name, 'по требованию', Math.round(content.length / 1024)]);
 }
-fs.writeFileSync(OUTPUT, output, 'utf8');
-// index.html — то же самое под именем, которое ждёт GitHub Pages
-fs.writeFileSync(path.join(ROOT, 'index.html'), output, 'utf8');
+
+output = monolith.page;   // дальнейшие проверки идут по самодостаточной версии
 
 // Финальная проверка: код приложения должен быть валидным JS.
 // Библиотеки не проверяем — они уже собраны и это экономит секунды на каждой сборке.

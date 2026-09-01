@@ -16,8 +16,8 @@ const SANDBOX = (() => {
   /** Собирает исходник окружения, общий для обоих исполнителей */
   function buildEnvSource() {
     return [
-      HARNESS_SOURCE,        // подставляется сборщиком
-      DOM_HARNESS_SOURCE,
+      SANDBOX_SOURCES.harness,   // таблицу заполняет сборщик
+      SANDBOX_SOURCES.dom,
     ].join('\n;\n');
   }
 
@@ -71,13 +71,13 @@ const SANDBOX = (() => {
 
   function frameSource(needsReact) {
     const libs = needsReact
-      ? '<script>' + REACT_SOURCE + '<\/script>'
+      ? '<script>' + SANDBOX_SOURCES.react + '<\/script>'
       : '';
     // Скрипты песочницы держим в head: в body они стали бы частью документа,
     // который проверяют тесты, и попадали бы в выборки по тексту
     return '<!doctype html><html><head><meta charset="utf-8">'
       + libs
-      + '<script>' + SUCRASE_SOURCE + '<\/script>'
+      + '<script>' + SANDBOX_SOURCES.sucrase + '<\/script>'
       + '<script>' + buildEnvSource() + '<\/script>'
       + '<script>' + FRAME_BOOT + '<\/script>'
       + '</head><body></body></html>';
@@ -205,7 +205,13 @@ const SANDBOX = (() => {
     if (!suite || !suite.cases || !suite.cases.length) {
       return { ok: false, error: 'Для этой задачи ещё нет автотестов' };
     }
-    return suite.env === 'worker' ? runInWorker(code, suite) : runInFrame(code, suite);
+    if (suite.env === 'worker') return runInWorker(code, suite);
+
+    // Задачам с DOM и React нужен транспайлер, а React-задачам ещё и сам React
+    if (!SANDBOX_SOURCES.sucrase && !(await ensureSandboxLibs())) {
+      return { ok: false, error: 'Не удалось загрузить окружение для этой задачи' };
+    }
+    return runInFrame(code, suite);
   }
 
   return { run };
