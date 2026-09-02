@@ -63,10 +63,12 @@ function createBrowserEnv() {
 function loadTasks() {
   const tasks = new Map();
 
-  const extraPath = path.join(ROOT, 'research', 'tasks.js');
-  if (fs.existsSync(extraPath)) {
+  // Файлы задач из research/: имя файла -> имя объявляемой константы
+  for (const [file, constName] of [['tasks.js', 'TASKS_EXTRA'], ['tasks-algo.js', 'TASKS_ALGO']]) {
+    const extraPath = path.join(ROOT, 'research', file);
+    if (!fs.existsSync(extraPath)) continue;
     const src = fs.readFileSync(extraPath, 'utf8');
-    for (const task of new Function(src + '; return TASKS_EXTRA;')()) tasks.set(task.id, task);
+    for (const task of new Function(src + '; return ' + constName + ';')()) tasks.set(task.id, task);
   }
 
   const template = fs.readFileSync(path.join(ROOT, 'src', 'app.template.html'), 'utf8');

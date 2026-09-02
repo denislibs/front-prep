@@ -28,6 +28,10 @@ const FILES = [
   ['tasks.js', 'TASKS_EXTRA'],
   // Разбор мессенджера — отдельным файлом, вливается в колоду System Design
   ['deck-messenger.js', 'DECK_MESSENGER'],
+  // Паттерны — своя колода, формат «проблема → решение»
+  ['deck-patterns.js', 'DECK_PATTERNS'],
+  // Алгоритмические задачи — отдельным файлом, вливаются в лайвкодинг
+  ['tasks-algo.js', 'TASKS_ALGO'],
 ];
 
 function fail(message) {
@@ -229,6 +233,7 @@ chunks.push('const FREQUENCY = Object.assign({}' +
 
 // mergeCards объявлена функцией в шаблоне, поэтому доступна здесь по всплытию
 chunks.push("if (typeof DECK_MESSENGER !== 'undefined') mergeCards('sd', DECK_MESSENGER);");
+chunks.push("if (typeof TASKS_ALGO !== 'undefined') TASKS.push(...TASKS_ALGO);");
 
 let output = template.replace(MARKER, () => chunks.join('\n\n'));
 

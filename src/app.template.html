@@ -471,6 +471,73 @@ details.solution[open] summary::before { content: "↓ "; }
 details.solution > div { margin-top: 20px; }
 
 /* ── Рабочее место: редактор и результаты ───────────────────── */
+/* ── Рабочее место задачи ─────────────────────────────────────── */
+
+.ws-bar {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 0 0 16px; margin-bottom: 18px; border-bottom: 1px solid var(--line);
+}
+.ws-title { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.ws-name { font-size: var(--step-1); font-weight: 700; letter-spacing: -.01em; }
+.ws-meta { font-size: 12px; color: var(--muted); }
+
+.ws-modes { display: flex; gap: 0; border: 1px solid var(--line-2); }
+.ws-modes .chip { border: 0; border-right: 1px solid var(--line-2); }
+.ws-modes .chip:last-child { border-right: 0; }
+
+.ws-timer {
+  font-family: var(--mono); font-size: 20px; font-weight: 700;
+  font-variant-numeric: tabular-nums; letter-spacing: -.02em;
+  padding: 4px 12px; border: 1px solid var(--line-2); min-width: 78px; text-align: center;
+}
+.ws-timer.over { color: var(--accent); border-color: var(--accent); }
+
+.ws-brief { margin-bottom: 8px; }
+.ws-brief > summary {
+  cursor: pointer; font-size: 11px; font-weight: 900; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--muted); padding: 8px 0;
+}
+.ws-brief[open] > summary { margin-bottom: 6px; }
+
+.ws-hints { margin: 26px 0; padding: 16px; border: 1px solid var(--line); background: var(--paper-2); }
+.ws-hints-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.ws-hints-count { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ws-hints .hint:last-of-type { margin-bottom: 12px; }
+
+/* Вкладка файла — чтобы редактор читался как редактор, а не как поле ввода */
+.file-tab {
+  font-family: var(--mono); font-size: 12px; padding: 4px 10px;
+  border: 1px solid var(--line-2); border-bottom-color: transparent;
+  background: var(--code-bg); margin-bottom: -13px;
+}
+.file-tab.is-solved::after { content: ' ✓'; color: var(--known); font-weight: 900; }
+
+.icon-btn {
+  font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  padding: 5px 10px; border: 1px solid var(--line-2); background: none;
+  color: var(--muted); cursor: pointer;
+}
+.icon-btn:hover { color: var(--ink); border-color: var(--ink); }
+
+.editor-grip { height: 7px; cursor: ns-resize; background: var(--paper-2); border-top: 1px solid var(--line); }
+.editor-grip:hover { background: var(--line-2); }
+
+.cases-preview { padding: 14px 16px; border-top: 1px solid var(--line); }
+.cases-list {
+  margin: 8px 0 0; padding-left: 20px;
+  font-size: 13px; color: var(--muted); line-height: 1.7;
+}
+.run-idle { margin: 0; font-size: 13px; color: var(--muted); }
+
+/* Во весь экран: полезно на React-задачах, где кода много */
+.workbench.is-full {
+  position: fixed; inset: 0; z-index: 60; margin: 0;
+  display: flex; flex-direction: column; background: var(--paper); overflow: auto;
+}
+.workbench.is-full .editor-host { flex: 1; max-height: none; height: auto !important; }
+.workbench.is-full .editor-grip { display: none; }
+body.ws-locked { overflow: hidden; }
+
 .workbench { margin: 30px 0 34px; border: 1px solid var(--line-2); }
 .workbench-head {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
@@ -5218,6 +5285,17 @@ if (typeof DECK_WEB_EXTRA   !== 'undefined') mergeCards('web',   DECK_WEB_EXTRA)
 if (typeof DECK_SD_EXTRA    !== 'undefined') mergeCards('sd',    DECK_SD_EXTRA);
 if (typeof DECK_BEH_EXTRA   !== 'undefined') mergeCards('beh',   DECK_BEH_EXTRA);
 
+// Паттерны — отдельная колода после React: там же, где о них спрашивают
+if (typeof DECK_PATTERNS !== 'undefined' && DECK_PATTERNS.length) {
+  const at = DECKS.findIndex(d => d.id === 'react') + 1;
+  DECKS.splice(at, 0, {
+    id: 'patterns',
+    title: 'Паттерны фронтенда',
+    sub: 'Типовые проблемы и решения: состояние, композиция, производительность.',
+    cards: DECK_PATTERNS,
+  });
+}
+
 if (typeof DECK_CSS !== 'undefined' && DECK_CSS.length) {
   const at = DECKS.findIndex(d => d.id === 'react') + 1;
   DECKS.splice(at, 0, {
@@ -5257,6 +5335,7 @@ const taskCat = (task) => task.cat || LEGACY_TASK_CAT[task.id] || 'Утилит�
 /* ══ STATE ════════════════════════════════════════════════════ */
 
 const STORAGE_KEY = 'fe-trainer-v1';
+const CODE_MODE_KEY = 'fe-code-mode';   // 'interview' | 'learn' — как показывать рабочее место
 const ALL_CARDS = DECKS.flatMap(d => d.cards.map(c => ({ ...c, deck: d.id, deckTitle: d.title })));
 
 let progress = {};          // cardId -> 'known' | 'review'
@@ -5277,6 +5356,8 @@ const ui = {
   drafts: {},               // черновики свободных ответов по карточкам
   task: null,
   cat: 'all',               // фильтр категорий в лайвкодинге
+  codeMode: 'interview',    // рабочее место задачи: как на секции или как за учебником
+  hintsOpen: {},            // taskId -> сколько подсказок открыто
   quiz: null,               // активная сессия теста
   quizDeck: 'all',
   quizSize: 20,
@@ -5284,6 +5365,10 @@ const ui = {
   mockDeck: 'all',
   mockSize: 10,
 };
+try {
+  const saved = localStorage.getItem(CODE_MODE_KEY);
+  if (saved === 'interview' || saved === 'learn') ui.codeMode = saved;
+} catch (e) { /* приватный режим — остаёмся на значении по умолчанию */ }
 
 /* ── Persistence: localStorage always, db when the viewer grants it ── */
 
@@ -6298,29 +6383,76 @@ function renderResults(container, payload) {
 }
 
 /** Рабочее место: редактор, кнопки запуска и панель результатов */
-function buildWorkbench(task, suite) {
+function buildWorkbench(task, suite, interview) {
   const wrap = el('section', 'workbench');
 
+  /* Строка вкладки — как в редакторе: имя файла и среда исполнения */
   const head = el('div', 'workbench-head');
-  head.appendChild(el('span', 'eyebrow-plain', 'Решение'));
+  const tab = el('span', 'file-tab');
+  tab.textContent = task.id + (suite.env === 'react' ? '.jsx' : '.js');
+  head.appendChild(tab);
   const envLabel = { worker: 'JavaScript', dom: 'DOM', react: 'React' }[suite.env] || suite.env;
   head.appendChild(el('span', 'env-tag', envLabel));
-  if (taskSolved[task.id]) head.appendChild(el('span', 'tag tag-known', 'Решено'));
+  head.appendChild(el('span', 'spacer'));
+
+  const fullBtn = el('button', 'icon-btn', 'Развернуть');
+  fullBtn.title = 'Редактор во весь экран';
+  fullBtn.addEventListener('click', () => {
+    const on = wrap.classList.toggle('is-full');
+    document.body.classList.toggle('ws-locked', on);
+    fullBtn.textContent = on ? 'Свернуть' : 'Развернуть';
+    if (editor) editor.requestMeasure();
+  });
+  head.appendChild(fullBtn);
   wrap.appendChild(head);
 
   const host = el('div', 'editor-host');
   wrap.appendChild(host);
 
+  /* Тянущаяся граница: высоту редактора подбираешь под задачу */
+  const grip = el('div', 'editor-grip');
+  grip.title = 'Потяни, чтобы изменить высоту редактора';
+  grip.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    grip.setPointerCapture(event.pointerId);
+    const startY = event.clientY;
+    const startH = host.getBoundingClientRect().height;
+    const move = (e) => {
+      host.style.height = Math.max(180, Math.min(900, startH + e.clientY - startY)) + 'px';
+      if (editor) editor.requestMeasure();
+    };
+    const up = () => {
+      grip.removeEventListener('pointermove', move);
+      grip.removeEventListener('pointerup', up);
+    };
+    grip.addEventListener('pointermove', move);
+    grip.addEventListener('pointerup', up);
+  });
+  wrap.appendChild(grip);
+
   const output = el('div', 'run-output');
 
   const actions = el('div', 'workbench-actions');
-  const runBtn = el('button', 'pill pill-primary', 'Запустить');
+  const runBtn = el('button', 'pill pill-primary', 'Запустить проверки');
   const resetBtn = el('button', 'ghost', 'Сбросить');
   actions.appendChild(runBtn);
   actions.appendChild(resetBtn);
   actions.appendChild(el('span', 'spacer'));
   actions.appendChild(el('span', 'kbd-hint', 'Ctrl/Cmd + Enter'));
   wrap.appendChild(actions);
+
+  /* В режиме обучения проверки видно заранее — понятно, что от тебя хотят.
+     В режиме интервью их нет: на секции список тестов тебе тоже не покажут. */
+  if (!interview) {
+    const preview = el('div', 'cases-preview');
+    preview.appendChild(el('span', 'eyebrow-plain', 'Что проверяем'));
+    const list = el('ol', 'cases-list');
+    for (const testCase of suite.cases) list.appendChild(el('li', null, testCase.name));
+    preview.appendChild(list);
+    wrap.appendChild(preview);
+  } else {
+    output.appendChild(el('p', 'run-idle', 'Проверки скрыты. Запусти — и увидишь, что не сошлось.'));
+  }
   wrap.appendChild(output);
 
   async function run() {
@@ -6352,7 +6484,7 @@ function buildWorkbench(task, suite) {
       saveLocal();
       pushRemote();
       renderHeaderProgress();
-      head.appendChild(el('span', 'tag tag-known', 'Решено'));
+      tab.classList.add('is-solved');
     }
 
     running = false;
@@ -6382,42 +6514,142 @@ function buildWorkbench(task, suite) {
   return wrap;
 }
 
+/* ── Рабочее место для задачи ────────────────────────────────────
+   Два режима. В режиме интервью условие свёрнуто в одну строку,
+   проверки скрыты до запуска, подсказки за кнопкой со счётчиком,
+   а сверху идёт таймер — так, как это происходит на секции.
+   В режиме обучения всё открыто: условие рядом, проверки видно
+   заранее, подсказки под рукой. */
+
+function viewTask(task) {
+  const wrap = document.createDocumentFragment();
+  const suite = typeof TASK_TESTS !== 'undefined' ? TASK_TESTS[task.id] : null;
+  const interview = ui.codeMode === 'interview';
+
+  /* Шапка: назад, название, режим, таймер */
+  const bar = el('div', 'ws-bar');
+
+  const back = el('button', 'ghost', '← Задачи');
+  back.addEventListener('click', () => { stopTaskTimer(); ui.task = null; render(); });
+  bar.appendChild(back);
+
+  const title = el('div', 'ws-title');
+  title.appendChild(el('span', 'ws-name', task.title));
+  const meta = el('span', 'ws-meta');
+  meta.textContent = taskCat(task) + (suite ? ' · ' + suite.cases.length + ' проверок' : '');
+  title.appendChild(meta);
+  bar.appendChild(title);
+
+  if (taskSolved[task.id]) bar.appendChild(el('span', 'tag tag-known', 'Решено'));
+
+  const modes = el('div', 'ws-modes');
+  for (const mode of [['interview', 'Интервью'], ['learn', 'Обучение']]) {
+    const chip = el('button', 'chip', mode[1]);
+    chip.setAttribute('aria-pressed', String(ui.codeMode === mode[0]));
+    chip.addEventListener('click', () => {
+      ui.codeMode = mode[0];
+      try { localStorage.setItem(CODE_MODE_KEY, mode[0]); } catch (e) { /* приватный режим */ }
+      render();
+    });
+    modes.appendChild(chip);
+  }
+  bar.appendChild(modes);
+
+  if (interview) {
+    const timer = el('div', 'ws-timer');
+    timer.id = 'taskTimer';
+    timer.textContent = '0:00';
+    bar.appendChild(timer);
+  }
+  wrap.appendChild(bar);
+
+  /* Условие: развёрнутое в обучении, свёрнутое на интервью */
+  const brief = el('details', 'ws-brief');
+  brief.open = !interview;
+  const summary = el('summary', null, interview ? 'Условие задачи' : 'Условие');
+  brief.appendChild(summary);
+  const prompt = el('div', 'task-body');
+  prompt.innerHTML = task.prompt;
+  brief.appendChild(prompt);
+  wrap.appendChild(brief);
+
+  /* Рабочая область */
+  if (suite) {
+    wrap.appendChild(buildWorkbench(task, suite, interview));
+  } else {
+    const empty = el('p', 'hint', 'Для этой задачи автотестов пока нет — решай в редакторе на своей стороне.');
+    wrap.appendChild(empty);
+  }
+
+  /* Подсказки: на интервью открываются по одной и это видно */
+  const hintsBox = el('section', 'ws-hints');
+  const opened = ui.hintsOpen[task.id] || 0;
+  const hintsHead = el('div', 'ws-hints-head');
+  hintsHead.appendChild(el('span', 'eyebrow-plain', 'Подсказки'));
+  hintsHead.appendChild(el('span', 'ws-hints-count', opened + ' из ' + task.hints.length));
+  hintsBox.appendChild(hintsHead);
+
+  for (let i = 0; i < Math.min(opened, task.hints.length); i++) {
+    hintsBox.appendChild(el('p', 'hint', task.hints[i]));
+  }
+  if (opened < task.hints.length) {
+    const more = el('button', 'ghost', opened ? 'Ещё подсказку' : 'Открыть подсказку');
+    more.addEventListener('click', () => {
+      ui.hintsOpen[task.id] = opened + 1;
+      render();
+    });
+    hintsBox.appendChild(more);
+  }
+  wrap.appendChild(hintsBox);
+
+  /* Решение — всегда под замком раскрытия */
+  const details = el('details', 'solution');
+  details.appendChild(el('summary', null, 'Показать решение'));
+  const solutionBody = el('div');
+  solutionBody.appendChild(codeBlock(task.code));
+  const notes = el('div', 'task-body');
+  notes.innerHTML = task.notes;
+  solutionBody.appendChild(notes);
+  details.appendChild(solutionBody);
+  wrap.appendChild(details);
+
+  if (interview) startTaskTimer(task.id);
+  return wrap;
+}
+
+let taskTimerHandle = null;
+let taskStartedAt = 0;
+let taskTimerFor = null;
+
+function startTaskTimer(taskId) {
+  // Перерисовка не сбрасывает счёт, переход к другой задаче — сбрасывает
+  if (taskTimerHandle && taskTimerFor === taskId) return;
+  stopTaskTimer();
+  taskTimerFor = taskId;
+  taskStartedAt = Date.now();
+  taskTimerHandle = setInterval(() => {
+    const node = document.getElementById('taskTimer');
+    if (!node) return;
+    const sec = Math.floor((Date.now() - taskStartedAt) / 1000);
+    node.textContent = Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
+    // Двадцать пять минут — типичный лимит на задачу в реальной секции
+    node.classList.toggle('over', sec > 25 * 60);
+  }, 500);
+}
+
+function stopTaskTimer() {
+  clearInterval(taskTimerHandle);
+  taskTimerHandle = null;
+  taskTimerFor = null;
+}
+
 /* ── Livecoding ── */
 
 function viewCode() {
   const wrap = document.createDocumentFragment();
 
   if (ui.task) {
-    const task = TASKS.find(t => t.id === ui.task);
-    const back = el('button', 'ghost', '← Все задачи');
-    back.addEventListener('click', () => { ui.task = null; render(); });
-    wrap.appendChild(back);
-
-    wrap.appendChild(el('h2', null, task.title));
-
-    const body = el('div', 'task-body');
-    const prompt = el('div');
-    prompt.innerHTML = task.prompt;
-    body.appendChild(prompt);
-
-    const suite = typeof TASK_TESTS !== 'undefined' ? TASK_TESTS[task.id] : null;
-    if (suite) body.appendChild(buildWorkbench(task, suite));
-
-    body.appendChild(el('h3', null, 'Подсказки — по одной, если застрял'));
-    for (const hint of task.hints) body.appendChild(el('p', 'hint', hint));
-
-    const details = el('details', 'solution');
-    details.appendChild(el('summary', null, 'Показать решение'));
-    const solutionBody = el('div');
-    solutionBody.appendChild(codeBlock(task.code));
-    const notes = el('div');
-    notes.innerHTML = task.notes;
-    solutionBody.appendChild(notes);
-    details.appendChild(solutionBody);
-    body.appendChild(details);
-
-    wrap.appendChild(body);
-    return wrap;
+    return viewTask(TASKS.find(t => t.id === ui.task));
   }
 
   wrap.appendChild(el('div', 'eyebrow', 'Лайвкодинг'));
@@ -7142,6 +7374,9 @@ function render() {
   renderNav();
   renderHeaderProgress();
   syncUrl();
+  // Ушли с задачи — снимаем таймер и полноэкранный режим редактора
+  if (ui.view !== 'code' || !ui.task) stopTaskTimer();
+  document.body.classList.remove('ws-locked');
   const app = document.getElementById('app');
   app.textContent = '';
   if (ui.view === 'dash')  app.appendChild(viewDash());
