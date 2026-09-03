@@ -213,6 +213,44 @@ sidebar['/code/'] = [{ text: 'Лайвкодинг', items: codeItems }];
 /* ── Статьи ──────────────────────────────────────────────────
    Пишутся руками в articles/ и переносятся как есть: в отличие от
    карточек, они не выводятся из данных приложения. */
+/* Тематические группы статей: заголовок и список файлов без расширения.
+   Плоский алфавитный список на три десятка статей бесполезен — искать в нём
+   нечего. Добавил статью — впиши её сюда, иначе уедет в «Разное». */
+const ARTICLE_GROUPS = [
+  ['Язык', [
+    'types-and-coercion', 'scope-and-closures', 'this-and-context',
+    'functions-and-patterns', 'prototypes-and-classes',
+    'arrays-objects-immutability', 'promises', 'async-await',
+    'memory-and-leaks', 'errors-and-debugging',
+  ]],
+  ['Браузер и сеть', [
+    'browser-rendering-event-loop', 'dom-events', 'url-to-page',
+  ]],
+  ['Веб-API', [
+    'web-workers', 'service-worker', 'storage-and-quotas',
+    'streaming-responses', 'media-streaming', 'realtime-transports',
+  ]],
+  ['Интерфейсы и React', [
+    'state-management-patterns', 'composition-patterns',
+    'data-fetching-patterns', 'rendering-performance-patterns',
+    'forms-and-validation', 'search-and-autocomplete',
+    'infinite-list-and-virtualization',
+  ]],
+  ['Архитектура и проектирование', [
+    'modules-and-bundling', 'design-system-as-product',
+    'microfrontends-and-migration', 'chat-system-design',
+  ]],
+  ['Инфраструктура и эксплуатация', [
+    'frontend-ci-cd', 'deploy-and-release',
+    'frontend-monitoring', 'frontend-resilience',
+  ]],
+  ['Тестирование', [
+    'testing-strategy',
+  ]],
+];
+const missingArticles = [];   // упомянуты в группе, но файла нет
+const ungrouped = [];         // файл есть, а группы для него нет
+
 const ARTICLES = path.join(ROOT, 'articles');
 const articleItems = [];
 
@@ -224,19 +262,44 @@ if (fs.existsSync(ARTICLES)) {
     .filter(f => f.endsWith('.md') && f !== 'index.md')
     .sort();
 
+  const byName = new Map();
   for (const file of files) {
     const source = fs.readFileSync(path.join(ARTICLES, file), 'utf8');
     fs.writeFileSync(path.join(outDir, file), source, 'utf8');
-    const title = (source.match(/^title:\s*"?(.+?)"?\s*$/m) || [])[1] || file.replace(/\.md$/, '');
-    articleItems.push({ text: title, link: '/articles/' + file.replace(/\.md$/, '') });
+    const name = file.replace(/\.md$/, '');
+    const title = (source.match(/^title:\s*"?(.+?)"?\s*$/m) || [])[1] || name;
+    byName.set(name, { text: title, link: '/articles/' + name });
   }
+
+  /* Порядок внутри группы — читательский, а не алфавитный: сначала то,
+     с чего начинают. Статья, которой нет ни в одной группе, попадает в
+     «Разное» и печатается предупреждением — чтобы новую не потеряли. */
+  const groups = [];
+  for (const [title, names] of ARTICLE_GROUPS) {
+    const items = names.map(n => byName.get(n)).filter(Boolean);
+    names.filter(n => !byName.has(n)).forEach(n => missingArticles.push(n));
+    items.forEach(item => byName.delete(item.link.replace('/articles/', '')));
+    if (items.length) groups.push({ text: title, items });
+  }
+  const rest = [...byName.values()];
+  if (rest.length) {
+    groups.push({ text: 'Разное', items: rest });
+    ungrouped.push(...rest.map(i => i.link.replace('/articles/', '')));
+  }
+  for (const group of groups) articleItems.push(...group.items);
 
   const listing = ['---', 'title: "Статьи"', '---', '', '# Статьи', '',
     '_Длинные разборы тем, которые карточками не закрыть: механика, а не факты._', ''];
-  for (const item of articleItems) listing.push('- [' + item.text + '](.' + item.link.replace('/articles', '') + ')');
+  for (const group of groups) {
+    listing.push('## ' + group.text, '');
+    for (const item of group.items) {
+      listing.push('- [' + item.text + '](.' + item.link.replace('/articles', '') + ')');
+    }
+    listing.push('');
+  }
   fs.writeFileSync(path.join(outDir, 'index.md'), listing.join('\n'), 'utf8');
 
-  if (articleItems.length) sidebar['/articles/'] = [{ text: 'Статьи', items: articleItems }];
+  if (groups.length) sidebar['/articles/'] = groups;
 }
 
 /* ── Главная ── */
@@ -343,3 +406,11 @@ export default defineConfig({
 console.log('✓ notes-src/ обновлён: ' + pages + ' страниц вопросов, ' +
   TASKS.length + ' задач, ' + DECKS.length + ' разделов, ' +
   articleItems.length + ' статей');
+
+// Группировка статей задаётся руками, поэтому о расхождениях говорим вслух
+if (ungrouped.length) {
+  console.log('  ! статьи без группы, ушли в «Разное»: ' + ungrouped.join(', '));
+}
+if (missingArticles.length) {
+  console.log('  ! в группе указаны, но файлов нет: ' + missingArticles.join(', '));
+}
