@@ -32,6 +32,11 @@ const FILES = [
   ['deck-patterns.js', 'DECK_PATTERNS'],
   // Алгоритмические задачи — отдельным файлом, вливаются в лайвкодинг
   ['tasks-algo.js', 'TASKS_ALGO'],
+  // Тестирование — своя колода и свои задачи, где пишешь не решение, а тест
+  ['deck-testing.js', 'DECK_TESTING'],
+  ['tasks-testing.js', 'TASKS_TESTING'],
+  // Архитектура фронтенда: дизайн-системы, микрофронтенды, схемные интерфейсы
+  ['deck-arch.js', 'DECK_ARCH'],
 ];
 
 function fail(message) {
@@ -233,7 +238,11 @@ chunks.push('const FREQUENCY = Object.assign({}' +
 
 // mergeCards объявлена функцией в шаблоне, поэтому доступна здесь по всплытию
 chunks.push("if (typeof DECK_MESSENGER !== 'undefined') mergeCards('sd', DECK_MESSENGER);");
-chunks.push("if (typeof TASKS_ALGO !== 'undefined') TASKS.push(...TASKS_ALGO);");
+// Задачи из отдельных файлов вливаются в общий список лайвкодинга.
+// Список именно здесь, а не в шаблоне: добавил файл в FILES — добавь имя сюда.
+for (const constName of ['TASKS_ALGO', 'TASKS_TESTING']) {
+  chunks.push("if (typeof " + constName + " !== 'undefined') TASKS.push(..." + constName + ");");
+}
 
 let output = template.replace(MARKER, () => chunks.join('\n\n'));
 

@@ -5314,6 +5314,29 @@ if (typeof DECK_CSS !== 'undefined' && DECK_CSS.length) {
   });
 }
 
+// Тестирование — колода в конце технических: спрашивают почти всегда,
+// но после того, как разобрались с самим React
+if (typeof DECK_TESTING !== 'undefined' && DECK_TESTING.length) {
+  const at = DECKS.findIndex(d => d.id === 'css') + 1;
+  DECKS.splice(at, 0, {
+    id: 'testing',
+    title: 'Тестирование',
+    sub: 'Что тестировать, чем, и почему тесты мигают.',
+    cards: DECK_TESTING,
+  });
+}
+
+// Архитектура — рядом с system design: тот же уровень разговора
+if (typeof DECK_ARCH !== 'undefined' && DECK_ARCH.length) {
+  const at = DECKS.findIndex(d => d.id === 'sd');
+  DECKS.splice(at, 0, {
+    id: 'arch',
+    title: 'Архитектура фронтенда',
+    sub: 'Дизайн-системы, микрофронтенды, миграции, схемные интерфейсы.',
+    cards: DECK_ARCH,
+  });
+}
+
 if (typeof TASKS_EXTRA !== 'undefined') TASKS.push(...TASKS_EXTRA);
 
 /* Частота вопроса на интервью: 3 — почти всегда, 2 — регулярно, 1 — редко.

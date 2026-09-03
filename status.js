@@ -25,6 +25,8 @@ const DECKS = [
   ['deck-beh.js', 'DECK_BEH_EXTRA', 35],
   ['deck-messenger.js', 'DECK_MESSENGER', 14],
   ['deck-patterns.js', 'DECK_PATTERNS', 45],
+  ['deck-testing.js', 'DECK_TESTING', 30],
+  ['deck-arch.js', 'DECK_ARCH', 30],
 ];
 
 const words = (html) => html.replace(/<[^>]+>/g, ' ').split(/\s+/).filter(Boolean).length;

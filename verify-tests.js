@@ -64,7 +64,7 @@ function loadTasks() {
   const tasks = new Map();
 
   // Файлы задач из research/: имя файла -> имя объявляемой константы
-  for (const [file, constName] of [['tasks.js', 'TASKS_EXTRA'], ['tasks-algo.js', 'TASKS_ALGO']]) {
+  for (const [file, constName] of [['tasks.js', 'TASKS_EXTRA'], ['tasks-algo.js', 'TASKS_ALGO'], ['tasks-testing.js', 'TASKS_TESTING']]) {
     const extraPath = path.join(ROOT, 'research', file);
     if (!fs.existsSync(extraPath)) continue;
     const src = fs.readFileSync(extraPath, 'utf8');
